@@ -1,0 +1,10 @@
+{
+    "id": "sr-popup-review",
+    "name": "SR Popup Review",
+    "version": "0.1.0",
+    "minAppVersion": "1.5.0",
+    "description": "Review your Spaced Repetition flashcards in a small always-on-top popup that appears at regular intervals. Companion plugin for the Spaced Repetition plugin.",
+    "author": "uzusio",
+    "authorUrl": "https://github.com/uzusio",
+    "isDesktopOnly": true
+}

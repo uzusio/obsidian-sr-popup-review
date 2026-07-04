@@ -1,0 +1,27 @@
+{
+  "name": "sr-popup-review",
+  "version": "0.1.0",
+  "description": "Review Spaced Repetition flashcards in a small always-on-top popup that appears at regular intervals",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "watch": "node esbuild.config.mjs watch",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "spaced-repetition",
+    "flashcards"
+  ],
+  "author": "uzusio",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "latest",
+    "tslib": "^2.8.0",
+    "typescript": "^5.7.0"
+  }
+}
