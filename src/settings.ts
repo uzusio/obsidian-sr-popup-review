@@ -1,9 +1,11 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type SRPopupPlugin from "./main";
 import { normalizeDeckPaths } from "./sr-bridge";
-import { t } from "./i18n";
+import { setLocaleOverride, t } from "./i18n";
 
 export interface SRPopupSettings {
+    /** "-" = follow Obsidian's app language. */
+    language: "-" | "en" | "ja";
     intervalMinutes: number;
     quietHoursStart: string;
     quietHoursEnd: string;
@@ -18,6 +20,7 @@ export interface SRPopupSettings {
 }
 
 export const DEFAULT_SETTINGS: SRPopupSettings = {
+    language: "-",
     intervalMinutes: 120,
     quietHoursStart: "01:00",
     quietHoursEnd: "09:00",
@@ -43,6 +46,25 @@ export class SRPopupSettingTab extends PluginSettingTab {
     display(): void {
         const { containerEl } = this;
         containerEl.empty();
+
+        new Setting(containerEl)
+            .setName(t("settingsLanguage"))
+            .setDesc(t("settingsLanguageDesc"))
+            .addDropdown((dropdown) =>
+                dropdown
+                    .addOption("-", t("languageDefault"))
+                    .addOption("en", "English")
+                    .addOption("ja", "日本語")
+                    .setValue(this.plugin.settings.language)
+                    .onChange(async (v) => {
+                        if (v === "-" || v === "en" || v === "ja") {
+                            this.plugin.settings.language = v;
+                            setLocaleOverride(v);
+                            await this.plugin.saveSettings();
+                            this.display(); // re-render the tab in the new language
+                        }
+                    }),
+            );
 
         const probe = this.plugin.bridge.probe();
         const version = this.plugin.bridge.getSRPlugin()?.manifest?.version ?? "?";

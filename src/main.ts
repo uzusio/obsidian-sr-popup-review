@@ -3,7 +3,7 @@ import { SRBridge } from "./sr-bridge";
 import { PopupController } from "./popup";
 import { Scheduler } from "./scheduler";
 import { DEFAULT_SETTINGS, SRPopupSettings, SRPopupSettingTab } from "./settings";
-import { t } from "./i18n";
+import { setLocaleOverride, t } from "./i18n";
 
 export default class SRPopupPlugin extends Plugin {
     declare settings: SRPopupSettings;
@@ -33,6 +33,7 @@ export default class SRPopupPlugin extends Plugin {
 
     async loadSettings(): Promise<void> {
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        setLocaleOverride(this.settings.language);
     }
 
     async saveSettings(): Promise<void> {

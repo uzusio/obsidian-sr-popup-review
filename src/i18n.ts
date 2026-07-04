@@ -15,6 +15,9 @@ const en: Strings = {
     popupFailed:
         "SR Popup Review: could not open the popup window. See the developer console for details.",
     commandShowNow: "Show review popup now",
+    settingsLanguage: "Language",
+    settingsLanguageDesc: "Language of this plugin's interface.",
+    languageDefault: "Obsidian's default",
     settingsStatus: "Spaced Repetition integration",
     settingsStatusOk: "Connected (Spaced Repetition v{version})",
     settingsStatusNg: "Unavailable: {reason}",
@@ -57,6 +60,9 @@ const ja: Strings = {
     popupFailed:
         "SR Popup Review: ポップアップウィンドウを開けませんでした。詳細は開発者コンソールを確認してください。",
     commandShowNow: "今すぐレビューポップアップを表示",
+    settingsLanguage: "言語",
+    settingsLanguageDesc: "このプラグインの表示言語。",
+    languageDefault: "Obsidianの設定に従う",
     settingsStatus: "Spaced Repetition 連携",
     settingsStatusOk: "接続済み（Spaced Repetition v{version}）",
     settingsStatusNg: "利用できません: {reason}",
@@ -84,19 +90,30 @@ const ja: Strings = {
     settingsCheckOnStartupDesc: "Obsidian起動の約15秒後に1回チェックします（最初の間隔を待ちません）。",
 };
 
-function pickTable(): Strings {
-    let locale = "en";
-    try {
-        locale = window.localStorage.getItem("language") ?? navigator.language ?? "en";
-    } catch {
-        /* fall back to English */
+/** "-" = follow Obsidian's app language (same convention as the SR plugin). */
+let localeOverride = "-";
+
+export function setLocaleOverride(lang: string): void {
+    localeOverride = lang;
+}
+
+function currentTable(): Strings {
+    let locale: string;
+    if (localeOverride !== "-") {
+        locale = localeOverride;
+    } else {
+        // Obsidian stores its UI language in localStorage; the key is absent for English.
+        try {
+            locale = window.localStorage.getItem("language") ?? "en";
+        } catch {
+            locale = "en";
+        }
     }
     return locale.startsWith("ja") ? ja : en;
 }
 
-const table = pickTable();
-
 export function t(key: string, vars?: Record<string, string | number>): string {
+    const table = currentTable();
     let s = table[key] ?? en[key] ?? key;
     if (vars) {
         for (const [k, v] of Object.entries(vars)) {
