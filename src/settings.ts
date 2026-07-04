@@ -44,7 +44,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName(t("settingsStatus"))
             .setDesc(
-                probe.ok
+                probe.status === "ok"
                     ? t("settingsStatusOk", { version })
                     : t("settingsStatusNg", { reason: probe.reason ?? "?" }),
             );

@@ -8,6 +8,7 @@ const en: Strings = {
     ratingFailed:
         "SR Popup Review: failed to save the review. See the developer console for details.",
     srMissing: "SR Popup Review: the Spaced Repetition plugin is not enabled.",
+    srNotReady: "SR Popup Review: Spaced Repetition is still initializing. Try again in a moment.",
     incompatible:
         "SR Popup Review: the installed Spaced Repetition version looks incompatible ({reason}). Popup reviews are disabled to keep your data safe.",
     nothingDue: "SR Popup Review: no cards to review right now.",
@@ -41,6 +42,7 @@ const ja: Strings = {
     ratingFailed:
         "SR Popup Review: 評価の書き込みに失敗しました。詳細は開発者コンソールを確認してください。",
     srMissing: "SR Popup Review: Spaced Repetition プラグインが有効になっていません。",
+    srNotReady: "SR Popup Review: Spaced Repetition の初期化がまだ終わっていません。少し待ってからもう一度試してください。",
     incompatible:
         "SR Popup Review: インストールされている Spaced Repetition と互換性がありません（{reason}）。データ保護のためポップアップレビューを無効化しました。",
     nothingDue: "SR Popup Review: 今レビューするカードはありません。",

@@ -32,8 +32,11 @@ export interface ReviewSession {
     rate(response: ReviewResponseValue): Promise<void>;
 }
 
+export type ProbeStatus = "ok" | "missing" | "notReady" | "incompatible";
+
 export interface ProbeResult {
-    ok: boolean;
+    status: ProbeStatus;
+    /** Diagnostic detail (English only, shown in notices/settings). */
     reason?: string;
 }
 
@@ -53,25 +56,41 @@ export class SRBridge {
         return plugins.plugins?.[SR_PLUGIN_ID] ?? null;
     }
 
+    /**
+     * SR's dataManager/uiManager getters THROW until the plugin finishes its
+     * layout-ready initialization, so "not ready yet" (transient) must be kept
+     * apart from "incompatible" (permanent, warn the user).
+     */
     probe(): ProbeResult {
         const sr = this.getSRPlugin();
-        if (!sr) return { ok: false, reason: "Spaced Repetition plugin is not enabled" };
-        if (typeof sr.dataManager?.sync !== "function")
-            return { ok: false, reason: "dataManager.sync not found" };
-        const rm = sr.reminderManager;
-        if (typeof rm?.openDeckContainer !== "function")
-            return { ok: false, reason: "reminderManager.openDeckContainer not found" };
-        if (typeof rm?.openFlashcardModal !== "function")
-            return { ok: false, reason: "reminderManager.openFlashcardModal not found" };
-        if (typeof rm?.focusObsidianWindow !== "function")
-            return { ok: false, reason: "reminderManager.focusObsidianWindow not found" };
-        return { ok: true };
+        if (!sr) return { status: "missing", reason: "Spaced Repetition plugin is not enabled" };
+        if (typeof sr.isInitialized !== "boolean")
+            return { status: "incompatible", reason: "isInitialized flag not found" };
+        if (sr.isInitialized !== true)
+            return { status: "notReady", reason: "Spaced Repetition is still initializing" };
+        let dm: any = null;
+        let ui: any = null;
+        try {
+            dm = sr.dataManager;
+            ui = sr.uiManager;
+        } catch {
+            return { status: "notReady", reason: "managers not initialized yet" };
+        }
+        if (typeof dm?.sync !== "function")
+            return { status: "incompatible", reason: "dataManager.sync not found" };
+        if (typeof ui?.openDeckContainer !== "function")
+            return { status: "incompatible", reason: "uiManager.openDeckContainer not found" };
+        if (typeof ui?.openFlashcardModal !== "function")
+            return { status: "incompatible", reason: "uiManager.openFlashcardModal not found" };
+        if (typeof ui?.focusObsidianWindow !== "function")
+            return { status: "incompatible", reason: "uiManager.focusObsidianWindow not found" };
+        return { status: "ok" };
     }
 
     /** True while SR's own review UI is in focus (avoid double review sessions). */
     isSRReviewUIOpen(): boolean {
         try {
-            return this.getSRPlugin()?.reminderManager?.getSRInFocusState?.() === true;
+            return this.getSRPlugin()?.uiManager?.getSRInFocusState?.() === true;
         } catch {
             return false;
         }
@@ -79,21 +98,21 @@ export class SRBridge {
 
     /**
      * Capture method: temporarily stub the UI-opening and focus-stealing methods of
-     * SR's ReminderManager, run its own openDeckContainer() pipeline (which syncs the
+     * SR's UIManager, run its own openDeckContainer() pipeline (which syncs the
      * vault and builds a ReviewQueueLoader), and grab the loader it would have handed
      * to the review modal. No UI is shown, no focus is taken, and every stub is
      * restored in `finally`. The loader then builds a real FlashcardReviewSequencer.
      */
     private async acquireSequencer(sr: any): Promise<any | null> {
         if (sr.dataManager.syncLock) return null;
-        const rm = sr.reminderManager;
-        const tvm = rm.tabViewManager;
+        const ui = sr.uiManager;
+        const tvm = ui.tabViewManager;
         let loader: any = null;
-        const origModal = rm.openFlashcardModal;
-        const origFocus = rm.focusObsidianWindow;
+        const origModal = ui.openFlashcardModal;
+        const origFocus = ui.focusObsidianWindow;
         const origTab = tvm?.openSRTabView;
-        rm.focusObsidianWindow = () => {};
-        rm.openFlashcardModal = (l: any) => {
+        ui.focusObsidianWindow = () => {};
+        ui.openFlashcardModal = (l: any) => {
             loader = l;
         };
         if (tvm) {
@@ -102,10 +121,10 @@ export class SRBridge {
             };
         }
         try {
-            await rm.openDeckContainer(REVIEW_MODE_REVIEW);
+            await ui.openDeckContainer(REVIEW_MODE_REVIEW);
         } finally {
-            rm.openFlashcardModal = origModal;
-            rm.focusObsidianWindow = origFocus;
+            ui.openFlashcardModal = origModal;
+            ui.focusObsidianWindow = origFocus;
             if (tvm) tvm.openSRTabView = origTab;
         }
         if (!loader || typeof loader.loadReviewQueue !== "function") return null;

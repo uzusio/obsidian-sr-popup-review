@@ -37,13 +37,15 @@ export class Scheduler {
             if (isInQuietHours(new Date(), s.quietHoursStart, s.quietHoursEnd)) return;
         }
         const probe = this.plugin.bridge.probe();
-        if (!probe.ok) {
-            const srMissing = this.plugin.bridge.getSRPlugin() === null;
+        if (probe.status !== "ok") {
             if (force) {
-                new Notice(srMissing ? t("srMissing") : t("incompatible", { reason: probe.reason ?? "?" }));
-            } else if (!srMissing && !this.warnedIncompatible) {
+                if (probe.status === "missing") new Notice(t("srMissing"));
+                else if (probe.status === "notReady") new Notice(t("srNotReady"));
+                else new Notice(t("incompatible", { reason: probe.reason ?? "?" }));
+            } else if (probe.status === "incompatible" && !this.warnedIncompatible) {
                 // SR is installed but its internals don't match what we verified:
                 // warn once and never write through an unknown path.
+                // "missing"/"notReady" are normal transient states — stay silent.
                 this.warnedIncompatible = true;
                 new Notice(t("incompatible", { reason: probe.reason ?? "?" }));
             }
