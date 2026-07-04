@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type SRPopupPlugin from "./main";
+import { normalizeDeckPaths } from "./sr-bridge";
 import { t } from "./i18n";
 
 export interface SRPopupSettings {
@@ -8,6 +9,8 @@ export interface SRPopupSettings {
     quietHoursEnd: string;
     autoCloseSeconds: number;
     dueCardsOnly: boolean;
+    deckFilterMode: "all" | "include" | "exclude";
+    deckFilterList: string[];
     showDeckName: boolean;
     checkOnStartup: boolean;
     /** Persisted state, not user-facing: epoch ms of the last popup. */
@@ -20,6 +23,8 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
     quietHoursEnd: "09:00",
     autoCloseSeconds: 90,
     dueCardsOnly: true,
+    deckFilterMode: "all",
+    deckFilterList: [],
     showDeckName: true,
     checkOnStartup: false,
     lastShownAt: 0,
@@ -95,6 +100,37 @@ export class SRPopupSettingTab extends PluginSettingTab {
                     }
                 }),
             );
+
+        new Setting(containerEl)
+            .setName(t("settingsDeckFilterMode"))
+            .setDesc(t("settingsDeckFilterModeDesc"))
+            .addDropdown((dropdown) =>
+                dropdown
+                    .addOption("all", t("deckFilterAll"))
+                    .addOption("include", t("deckFilterInclude"))
+                    .addOption("exclude", t("deckFilterExclude"))
+                    .setValue(this.plugin.settings.deckFilterMode)
+                    .onChange(async (v) => {
+                        if (v === "all" || v === "include" || v === "exclude") {
+                            this.plugin.settings.deckFilterMode = v;
+                            await this.plugin.saveSettings();
+                        }
+                    }),
+            );
+
+        new Setting(containerEl)
+            .setName(t("settingsDeckFilterList"))
+            .setDesc(t("settingsDeckFilterListDesc"))
+            .addTextArea((text) => {
+                text.setValue(this.plugin.settings.deckFilterList.join("\n")).onChange(
+                    async (v) => {
+                        this.plugin.settings.deckFilterList = normalizeDeckPaths(v.split("\n"));
+                        await this.plugin.saveSettings();
+                    },
+                );
+                text.inputEl.rows = 4;
+                text.inputEl.placeholder = "flashcards/韓国語";
+            });
 
         new Setting(containerEl)
             .setName(t("settingsDueOnly"))

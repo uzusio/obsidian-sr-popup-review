@@ -16,6 +16,27 @@ export type ReviewResponseValue = (typeof ReviewResponse)[keyof typeof ReviewRes
 const REVIEW_MODE_REVIEW = 1;
 const REP_ITEM_TYPE_NEW = 0;
 const REP_ITEM_TYPE_DUE = 1;
+/** Runaway guard for the deck-filter skip loop. */
+const MAX_FILTER_SKIPS = 1000;
+
+export interface DeckFilter {
+    mode: "all" | "include" | "exclude";
+    /** Deck paths like "flashcards/韓国語"; a rule matches the deck itself and all subdecks. */
+    paths: string[];
+}
+
+/** Trims, strips a leading "#" and trailing "/", and drops empty lines. */
+export function normalizeDeckPaths(lines: string[]): string[] {
+    return lines
+        .map((l) => l.trim().replace(/^#/, "").replace(/\/+$/, ""))
+        .filter((l) => l.length > 0);
+}
+
+function deckAllowed(deckPath: string, filter: DeckFilter): boolean {
+    if (filter.mode === "all" || filter.paths.length === 0) return true;
+    const matched = filter.paths.some((p) => deckPath === p || deckPath.startsWith(p + "/"));
+    return filter.mode === "include" ? matched : !matched;
+}
 
 export interface ReviewSession {
     /** Markdown of the question side (cloze deletions already masked by SR's parser). */
@@ -131,11 +152,23 @@ export class SRBridge {
         return await loader.loadReviewQueue();
     }
 
+    /** Full deck path of the current card, e.g. "flashcards/韓国語" ("" if unknown). */
+    private currentDeckPath(sequencer: any): string {
+        try {
+            const topicPath = sequencer.currentDeck?.getTopicPath?.();
+            if (Array.isArray(topicPath?.path)) return topicPath.path.join("/");
+        } catch {
+            /* fall through */
+        }
+        return "";
+    }
+
     /**
      * Opens a one-card review session, or returns null when there is nothing to show
-     * (no cards, SR busy, internals incompatible, or only new cards while dueCardsOnly).
+     * (no cards, SR busy, internals incompatible, or no card passes the deck filter /
+     * dueCardsOnly conditions).
      */
-    async openSession(dueCardsOnly: boolean): Promise<ReviewSession | null> {
+    async openSession(dueCardsOnly: boolean, filter: DeckFilter): Promise<ReviewSession | null> {
         const sr = this.getSRPlugin();
         if (!sr) return null;
         let sequencer: any = null;
@@ -147,13 +180,23 @@ export class SRBridge {
         }
         if (!sequencer || sequencer.hasCurrentCard !== true) return null;
         if (typeof sequencer.processReview !== "function") return null;
+
+        // Walk the queue to the first card that passes the deck filter (and, with
+        // dueCardsOnly, has a schedule). skipCurrentCard() only mutates the in-memory
+        // queue — nothing is written, and the next sync rebuilds the tree.
+        let skips = 0;
+        while (sequencer.hasCurrentCard === true) {
+            const allowed = deckAllowed(this.currentDeckPath(sequencer), filter);
+            const isNew = sequencer.currentCard?.hasSchedule !== true;
+            if (allowed && (!dueCardsOnly || !isNew)) break;
+            if (typeof sequencer.skipCurrentCard !== "function" || ++skips > MAX_FILTER_SKIPS)
+                return null;
+            sequencer.skipCurrentCard();
+        }
+        if (sequencer.hasCurrentCard !== true) return null;
         const card = sequencer.currentCard;
         if (typeof card?.front !== "string" || typeof card?.back !== "string") return null;
-
         const isNewCard = card.hasSchedule !== true;
-        // Card order is due-first in SR's defaults, so a new card at the head of the
-        // queue means nothing is due right now.
-        if (dueCardsOnly && isNewCard) return null;
 
         let dueCount = 0;
         let newCount = 0;
@@ -165,13 +208,8 @@ export class SRBridge {
             /* counts are cosmetic only */
         }
 
-        let deckName: string | null = null;
-        try {
-            const raw = sequencer.currentDeck?.deckName;
-            if (typeof raw === "string" && raw.length > 0 && raw !== "root") deckName = raw;
-        } catch {
-            /* cosmetic only */
-        }
+        const deckPath = this.currentDeckPath(sequencer);
+        const deckName: string | null = deckPath.length > 0 ? deckPath : null;
 
         const srSettings = sr.dataManager?.data?.settings;
         const buttonLabels = {

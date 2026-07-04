@@ -53,7 +53,10 @@ export class Scheduler {
         }
         if (!force && this.plugin.bridge.isSRReviewUIOpen()) return;
 
-        const session = await this.plugin.bridge.openSession(s.dueCardsOnly);
+        const session = await this.plugin.bridge.openSession(s.dueCardsOnly, {
+            mode: s.deckFilterMode,
+            paths: s.deckFilterList,
+        });
         if (!session) {
             if (force) new Notice(t("nothingDue"));
             return;
