@@ -5,6 +5,7 @@ const en: Strings = {
     due: "{n} due",
     newCard: "New card",
     saved: "Saved",
+    saving: "Saving…",
     ratingFailed:
         "SR Popup Review: failed to save the review. See the developer console for details.",
     srMissing: "SR Popup Review: the Spaced Repetition plugin is not enabled.",
@@ -50,6 +51,7 @@ const ja: Strings = {
     due: "期限 {n}枚",
     newCard: "新規カード",
     saved: "記録しました",
+    saving: "保存中…",
     ratingFailed:
         "SR Popup Review: 評価の書き込みに失敗しました。詳細は開発者コンソールを確認してください。",
     srMissing: "SR Popup Review: Spaced Repetition プラグインが有効になっていません。",

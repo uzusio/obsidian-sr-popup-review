@@ -8,8 +8,6 @@ const WIDTH = 400;
 const HEIGHT_FRONT = 260;
 const HEIGHT_REVEALED = 470;
 const MARGIN = 16;
-const POLL_MS = 250;
-const DONE_MS = 700;
 
 const ACTION_TO_RESPONSE: Record<string, ReviewResponseValue> = {
     again: ReviewResponse.Again,
@@ -37,20 +35,18 @@ function escapeHtml(s: string): string {
 /**
  * Frameless always-on-top popup at the bottom-right of the primary display.
  *
- * The popup is a plain BrowserWindow without Node access. Communication back to
- * the plugin deliberately avoids remote event subscription (fragile across
- * Electron versions): the plugin polls `window.__srAction` / `window.__srRevealed`
- * via executeJavaScript every 250 ms instead.
+ * Communication is a LONG POLL, not a timer: the plugin awaits
+ * executeJavaScript("window.__nextEvent()"), whose promise resolves the moment
+ * the popup emits an event. Timers in the (usually minimized) main Obsidian
+ * window are heavily throttled by Chromium, so anything latency-sensitive must
+ * either live in the visible popup window (auto-close countdown, click feedback)
+ * or be event-driven like this (rating -> write). Remote event subscription is
+ * still avoided (fragile across Electron versions).
  */
 export class PopupController {
     private win: any = null;
     private session: ReviewSession | null = null;
-    private pollTimer: number | null = null;
-    private autoCloseTimer: number | null = null;
-    private autoCloseSeconds = 0;
     private revealed = false;
-    private actionHandled = false;
-    private polling = false;
 
     constructor(
         private app: App,
@@ -73,11 +69,9 @@ export class PopupController {
             return false;
         }
         this.session = session;
-        this.autoCloseSeconds = autoCloseSeconds;
         this.revealed = false;
-        this.actionHandled = false;
 
-        const html = await this.buildHtml(session, showDeckName);
+        const html = await this.buildHtml(session, showDeckName, autoCloseSeconds);
         let win: any;
         try {
             win = new remote.BrowserWindow({
@@ -113,12 +107,59 @@ export class PopupController {
             this.finish();
             return false;
         }
-        this.pollTimer = window.setInterval(() => void this.poll(), POLL_MS);
-        this.resetAutoClose();
+        void this.eventLoop();
         return true;
     }
 
     close(): void {
+        this.finish();
+    }
+
+    /**
+     * Long-poll loop: each iteration blocks until the popup emits an event
+     * ("revealed", a rating action, or "close"). The executeJavaScript promise
+     * rejects when the window is closed/destroyed, which also ends the loop.
+     */
+    private async eventLoop(): Promise<void> {
+        while (this.isOpen) {
+            let event: unknown;
+            try {
+                event = await this.win.webContents.executeJavaScript("window.__nextEvent()", true);
+            } catch {
+                break; // window closed or content gone
+            }
+            if (!this.isOpen) break;
+            if (event === "revealed") {
+                this.revealed = true;
+                const remote = getRemote();
+                if (remote) this.place(remote, HEIGHT_REVEALED);
+                continue;
+            }
+            if (event === "close") break;
+            const response = ACTION_TO_RESPONSE[String(event)];
+            if (response === undefined || !this.session) break;
+            const started = Date.now();
+            try {
+                await this.session.rate(response);
+                console.debug(
+                    `[sr-popup-review] review (${String(event)}) written in ${Date.now() - started} ms`,
+                );
+            } catch (e) {
+                console.error("[sr-popup-review] failed to save review", e);
+                new Notice(t("ratingFailed"));
+                break;
+            }
+            try {
+                await this.win?.webContents?.executeJavaScript(
+                    "window.__showDone && window.__showDone()",
+                    true,
+                );
+            } catch {
+                /* window may already be gone; the review is saved either way */
+            }
+            // The popup shows the done flash and closes itself; the next
+            // __nextEvent() call rejects at that point and ends the loop.
+        }
         this.finish();
     }
 
@@ -136,91 +177,7 @@ export class PopupController {
         }
     }
 
-    private resetAutoClose(): void {
-        if (this.autoCloseTimer !== null) {
-            window.clearTimeout(this.autoCloseTimer);
-            this.autoCloseTimer = null;
-        }
-        if (this.autoCloseSeconds > 0) {
-            this.autoCloseTimer = window.setTimeout(
-                () => this.finish(),
-                this.autoCloseSeconds * 1000,
-            );
-        }
-    }
-
-    private async poll(): Promise<void> {
-        if (this.polling || this.actionHandled) return;
-        this.polling = true;
-        try {
-            await this.pollOnce();
-        } finally {
-            this.polling = false;
-        }
-    }
-
-    private async pollOnce(): Promise<void> {
-        if (!this.isOpen) {
-            this.finish();
-            return;
-        }
-        let state: { a: string | null; r: boolean };
-        try {
-            state = await this.win.webContents.executeJavaScript(
-                "({ a: window.__srAction || null, r: window.__srRevealed === true })",
-                true,
-            );
-        } catch {
-            // Window closed (Alt+F4 etc.) or content gone.
-            this.finish();
-            return;
-        }
-        if (this.actionHandled || !this.isOpen) return;
-        if (state.r && !this.revealed) {
-            this.revealed = true;
-            const remote = getRemote();
-            if (remote) this.place(remote, HEIGHT_REVEALED);
-            this.resetAutoClose();
-        }
-        if (!state.a) return;
-        if (state.a === "close") {
-            this.finish();
-            return;
-        }
-        const response = ACTION_TO_RESPONSE[state.a];
-        if (response === undefined || !this.session) {
-            this.finish();
-            return;
-        }
-        this.actionHandled = true;
-        try {
-            await this.session.rate(response);
-        } catch (e) {
-            console.error("[sr-popup-review] failed to save review", e);
-            new Notice(t("ratingFailed"));
-            this.finish();
-            return;
-        }
-        try {
-            await this.win?.webContents?.executeJavaScript(
-                "window.__showDone && window.__showDone()",
-                true,
-            );
-        } catch {
-            /* window may already be gone; the review is saved either way */
-        }
-        window.setTimeout(() => this.finish(), DONE_MS);
-    }
-
     private finish(): void {
-        if (this.pollTimer !== null) {
-            window.clearInterval(this.pollTimer);
-            this.pollTimer = null;
-        }
-        if (this.autoCloseTimer !== null) {
-            window.clearTimeout(this.autoCloseTimer);
-            this.autoCloseTimer = null;
-        }
         const win = this.win;
         this.win = null;
         this.session = null;
@@ -242,7 +199,11 @@ export class PopupController {
         }
     }
 
-    private async buildHtml(session: ReviewSession, showDeckName: boolean): Promise<string> {
+    private async buildHtml(
+        session: ReviewSession,
+        showDeckName: boolean,
+        autoCloseSeconds: number,
+    ): Promise<string> {
         const frontHtml = await this.renderMarkdown(session.front);
         const backHtml = await this.renderMarkdown(session.back);
         const dark = document.body.classList.contains("theme-dark");
@@ -252,6 +213,7 @@ export class PopupController {
             escapeHtml(session.isNewCard ? t("newCard") : t("due", { n: session.dueCount })),
         );
         const labels = session.buttonLabels;
+        const autoCloseMs = Math.max(0, Math.round(autoCloseSeconds * 1000));
 
         return `<!doctype html>
 <html>
@@ -299,7 +261,9 @@ button.action {
     background: var(--btn-bg); color: var(--fg);
     border: 1px solid var(--btn-border); border-radius: 6px; padding: 8px 0;
 }
-button.action:hover { border-color: var(--fg); }
+button.action:hover:enabled { border-color: var(--fg); }
+button.action:disabled { opacity: 0.45; cursor: default; }
+button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0 1px currentColor inset; }
 #revealBtn { width: 100%; }
 #ratings { display: flex; gap: 6px; }
 #ratings .action { flex: 1; font-weight: 600; }
@@ -307,6 +271,7 @@ button.action:hover { border-color: var(--fg); }
 #ratings .hard { color: var(--hard); }
 #ratings .good { color: var(--good); }
 #ratings .easy { color: var(--easy); }
+#saving { margin-top: 8px; font-size: 12px; color: var(--muted); text-align: center; }
 .done {
     position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     background: var(--bg); font-size: 16px;
@@ -330,43 +295,83 @@ button.action:hover { border-color: var(--fg); }
         <button class="action good" data-action="good">${escapeHtml(labels.good)}</button>
         <button class="action easy" data-action="easy">${escapeHtml(labels.easy)}</button>
     </div>
+    <div id="saving" hidden>${escapeHtml(t("saving"))}</div>
 </div>
 <div id="done" class="done" hidden>✓ ${escapeHtml(t("saved"))}</div>
 <script>
 (function () {
+    // Event queue + long-poll endpoint for the plugin side.
+    var events = [];
+    var waiters = [];
+    function emit(e) {
+        if (waiters.length) waiters.shift()(e);
+        else events.push(e);
+    }
+    window.__nextEvent = function () {
+        if (events.length) return Promise.resolve(events.shift());
+        return new Promise(function (resolve) { waiters.push(resolve); });
+    };
+
     var revealBtn = document.getElementById("revealBtn");
     var ratings = document.getElementById("ratings");
     var answer = document.getElementById("answer");
+    var saving = document.getElementById("saving");
+
+    // Auto-close lives here (this window is visible, so its timers are not
+    // throttled, unlike the minimized main Obsidian window).
+    var autoCloseMs = ${autoCloseMs};
+    var autoCloseTimer = null;
+    function armAutoClose() {
+        if (!autoCloseMs) return;
+        if (autoCloseTimer) clearTimeout(autoCloseTimer);
+        autoCloseTimer = setTimeout(function () { emit("close"); }, autoCloseMs);
+    }
+    armAutoClose();
+
+    var revealed = false;
     function reveal() {
-        if (window.__srRevealed) return;
-        window.__srRevealed = true;
+        if (revealed) return;
+        revealed = true;
         revealBtn.hidden = true;
         answer.hidden = false;
         ratings.hidden = false;
+        armAutoClose();
+        emit("revealed");
     }
+
+    var byAction = {};
+    var chosen = false;
+    function choose(action) {
+        if (chosen || !revealed) return;
+        chosen = true;
+        if (autoCloseTimer) clearTimeout(autoCloseTimer);
+        Object.keys(byAction).forEach(function (k) { byAction[k].disabled = true; });
+        if (byAction[action]) byAction[action].classList.add("chosen");
+        saving.hidden = false;
+        emit(action);
+    }
+
     revealBtn.addEventListener("click", reveal);
     document.getElementById("closeBtn").addEventListener("click", function () {
-        window.__srAction = "close";
+        if (!chosen) emit("close");
     });
     Array.prototype.forEach.call(ratings.querySelectorAll(".action"), function (b) {
-        b.addEventListener("click", function () {
-            window.__srAction = b.getAttribute("data-action");
-        });
+        byAction[b.getAttribute("data-action")] = b;
+        b.addEventListener("click", function () { choose(b.getAttribute("data-action")); });
     });
     window.__showDone = function () {
         document.getElementById("done").hidden = false;
+        setTimeout(function () { window.close(); }, 700);
     };
     document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") { window.__srAction = "close"; return; }
-        if (!window.__srRevealed && (e.key === " " || e.key === "Enter")) {
+        if (e.key === "Escape") { if (!chosen) emit("close"); return; }
+        if (!revealed && (e.key === " " || e.key === "Enter")) {
             e.preventDefault();
             reveal();
             return;
         }
-        if (window.__srRevealed) {
-            var map = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
-            if (map[e.key]) window.__srAction = map[e.key];
-        }
+        var map = { "1": "again", "2": "hard", "3": "good", "4": "easy" };
+        if (map[e.key]) choose(map[e.key]);
     });
 })();
 </` + `script>
