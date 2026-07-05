@@ -53,7 +53,7 @@ You can also open a popup at any time with the command **"Show review popup now"
 | --- | --- | --- |
 | Language | Obsidian's default | Interface language of this plugin (English / 日本語) |
 | Popup interval (minutes) | 120 | How often a popup may appear (minimum 5) |
-| Quiet hours | 01:00–09:00 | No popups during this window; supports ranges across midnight. Set start = end to disable |
+| Do not disturb | on, 01:00–09:00 | Toggle plus a time range with no popups; supports ranges across midnight |
 | Auto-close (seconds) | 90 | Closes an untouched popup (nothing is written); 0 disables |
 | Due cards only | on | Only show cards that are actually due; turn off to also get new cards |
 | Deck filter | All decks | *All decks* / *Only listed decks* / *All except listed decks* |

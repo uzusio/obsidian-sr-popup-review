@@ -7,6 +7,7 @@ export interface SRPopupSettings {
     /** "-" = follow Obsidian's app language. */
     language: "-" | "en" | "ja";
     intervalMinutes: number;
+    quietHoursEnabled: boolean;
     quietHoursStart: string;
     quietHoursEnd: string;
     autoCloseSeconds: number;
@@ -22,6 +23,7 @@ export interface SRPopupSettings {
 export const DEFAULT_SETTINGS: SRPopupSettings = {
     language: "-",
     intervalMinutes: 120,
+    quietHoursEnabled: true,
     quietHoursStart: "01:00",
     quietHoursEnd: "09:00",
     autoCloseSeconds: 90,
@@ -89,26 +91,36 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 }),
             );
 
-        new Setting(containerEl)
-            .setName(t("settingsQuietStart"))
-            .setDesc(t("settingsQuietDesc"))
-            .addText((text) =>
-                text.setValue(this.plugin.settings.quietHoursStart).onChange(async (v) => {
-                    if (HHMM_RE.test(v.trim())) {
-                        this.plugin.settings.quietHoursStart = v.trim();
-                        await this.plugin.saveSettings();
-                    }
-                }),
-            );
-
-        new Setting(containerEl).setName(t("settingsQuietEnd")).addText((text) =>
-            text.setValue(this.plugin.settings.quietHoursEnd).onChange(async (v) => {
-                if (HHMM_RE.test(v.trim())) {
-                    this.plugin.settings.quietHoursEnd = v.trim();
-                    await this.plugin.saveSettings();
-                }
+        const quiet = new Setting(containerEl)
+            .setName(t("settingsQuietHours"))
+            .setDesc(t("settingsQuietHoursDesc"));
+        quiet.addToggle((toggle) =>
+            toggle.setValue(this.plugin.settings.quietHoursEnabled).onChange(async (v) => {
+                this.plugin.settings.quietHoursEnabled = v;
+                await this.plugin.saveSettings();
+                this.display(); // enable/disable the time inputs
             }),
         );
+        const addTimeInput = (value: string, save: (v: string) => void) => {
+            quiet.addText((text) => {
+                text.setValue(value).onChange(async (v) => {
+                    if (HHMM_RE.test(v.trim())) {
+                        save(v.trim());
+                        await this.plugin.saveSettings();
+                    }
+                });
+                text.inputEl.type = "time";
+                text.inputEl.disabled = !this.plugin.settings.quietHoursEnabled;
+            });
+        };
+        addTimeInput(this.plugin.settings.quietHoursStart, (v) => {
+            this.plugin.settings.quietHoursStart = v;
+        });
+        const separator = quiet.controlEl.createSpan({ text: "〜" });
+        separator.style.margin = "0 4px";
+        addTimeInput(this.plugin.settings.quietHoursEnd, (v) => {
+            this.plugin.settings.quietHoursEnd = v;
+        });
 
         new Setting(containerEl)
             .setName(t("settingsAutoClose"))
@@ -204,7 +216,13 @@ export class SRPopupSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName(t("settingsDeckFilterList"))
-            .setDesc(t("settingsDeckPickerDesc"))
+            .setDesc(
+                t(
+                    this.plugin.settings.deckFilterMode === "include"
+                        ? "deckPickerIncludeDesc"
+                        : "deckPickerExcludeDesc",
+                ),
+            )
             .setHeading();
 
         const list = () => this.plugin.settings.deckFilterList;

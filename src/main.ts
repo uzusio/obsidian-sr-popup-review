@@ -32,7 +32,15 @@ export default class SRPopupPlugin extends Plugin {
     }
 
     async loadSettings(): Promise<void> {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        const data = await this.loadData();
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+        // Migrate the old "start == end means disabled" convention to the toggle.
+        if (
+            data?.quietHoursEnabled === undefined &&
+            this.settings.quietHoursStart === this.settings.quietHoursEnd
+        ) {
+            this.settings.quietHoursEnabled = false;
+        }
         setLocaleOverride(this.settings.language);
     }
 

@@ -24,9 +24,9 @@ const en: Strings = {
     settingsStatusNg: "Unavailable: {reason}",
     settingsInterval: "Popup interval (minutes)",
     settingsIntervalDesc: "How often a popup may appear. Minimum 5 minutes.",
-    settingsQuietStart: "Quiet hours start (HH:mm)",
-    settingsQuietEnd: "Quiet hours end (HH:mm)",
-    settingsQuietDesc: "No popups appear during quiet hours. Set both to the same time to disable.",
+    settingsQuietHours: "Do not disturb",
+    settingsQuietHoursDesc:
+        "No popups during this time range (ranges across midnight are supported).",
     settingsAutoClose: "Auto-close (seconds)",
     settingsAutoCloseDesc:
         "Close the popup automatically after this many seconds without interaction (nothing is written). 0 disables auto-close.",
@@ -37,9 +37,11 @@ const en: Strings = {
     deckFilterExclude: "All except listed decks",
     settingsDeckFilterList: "Deck list",
     settingsDeckFilterListDesc:
-        "One deck path per line, e.g. flashcards/korean. A rule also matches all of the deck's subdecks.",
-    settingsDeckPickerDesc:
-        "Toggle the decks to put on the list. A listed deck also covers all of its subdecks.",
+        "One deck path per line, e.g. flashcards/korean. A rule also matches all of the deck's subdecks. While the list is empty, all decks appear.",
+    deckPickerIncludeDesc:
+        "Only the checked decks appear in popups (a checked deck also covers its subdecks). While nothing is checked, all decks appear.",
+    deckPickerExcludeDesc:
+        "The checked decks never appear in popups (a checked deck also covers its subdecks). While nothing is checked, all decks appear.",
     deckImplied: "Covered via {parent}",
     deckNotFound: "Not found in the current decks",
     remove: "Remove",
@@ -75,9 +77,8 @@ const ja: Strings = {
     settingsStatusNg: "利用できません: {reason}",
     settingsInterval: "ポップアップ間隔（分）",
     settingsIntervalDesc: "ポップアップを出す間隔。最小5分。",
-    settingsQuietStart: "静穏時間の開始（HH:mm）",
-    settingsQuietEnd: "静穏時間の終了（HH:mm）",
-    settingsQuietDesc: "静穏時間帯はポップアップを出しません。開始と終了を同じ時刻にすると無効になります。",
+    settingsQuietHours: "ポップアップ停止時間帯",
+    settingsQuietHoursDesc: "この時間帯はポップアップを出しません（日付をまたぐ範囲も指定できます）。",
     settingsAutoClose: "自動クローズ（秒）",
     settingsAutoCloseDesc:
         "無操作のままこの秒数が経つとポップアップを閉じます（何も書き込みません）。0で無効。",
@@ -88,9 +89,11 @@ const ja: Strings = {
     deckFilterExclude: "リストのデッキ以外",
     settingsDeckFilterList: "デッキリスト",
     settingsDeckFilterListDesc:
-        "1行に1デッキパス（例: flashcards/韓国語）。指定したデッキのサブデッキにも適用されます。",
-    settingsDeckPickerDesc:
-        "リストに入れるデッキをトグルで選びます。選んだデッキのサブデッキにも適用されます。",
+        "1行に1デッキパス（例: flashcards/韓国語）。指定したデッキのサブデッキにも適用されます。空欄の間は全デッキが出ます。",
+    deckPickerIncludeDesc:
+        "チェックしたデッキだけがポップアップに出ます（サブデッキにも適用）。何もチェックしていない間は全デッキが出ます。",
+    deckPickerExcludeDesc:
+        "チェックしたデッキはポップアップに出ません（サブデッキにも適用）。何もチェックしていない間は全デッキが出ます。",
     deckImplied: "{parent} 経由で適用中",
     deckNotFound: "現在のデッキに存在しません",
     remove: "削除",

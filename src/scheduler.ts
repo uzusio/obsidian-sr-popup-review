@@ -34,7 +34,11 @@ export class Scheduler {
         if (this.plugin.popup.isOpen) return;
         if (!force) {
             if (Date.now() - s.lastShownAt < s.intervalMinutes * 60_000) return;
-            if (isInQuietHours(new Date(), s.quietHoursStart, s.quietHoursEnd)) return;
+            if (
+                s.quietHoursEnabled &&
+                isInQuietHours(new Date(), s.quietHoursStart, s.quietHoursEnd)
+            )
+                return;
         }
         const probe = this.plugin.bridge.probe();
         if (probe.status !== "ok") {
