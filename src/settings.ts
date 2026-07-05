@@ -1,6 +1,7 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting, moment } from "obsidian";
 import type SRPopupPlugin from "./main";
 import { normalizeDeckPaths } from "./sr-bridge";
+import { isInQuietHours, quietHoursEndDate } from "./scheduler";
 import { setLocaleOverride, t } from "./i18n";
 
 export interface SRPopupSettings {
@@ -77,6 +78,30 @@ export class SRPopupSettingTab extends PluginSettingTab {
                     ? t("settingsStatusOk", { version })
                     : t("settingsStatusNg", { reason: probe.reason ?? "?" }),
             );
+
+        // Diagnosis: when the next automatic popup can appear (interval gate,
+        // pushed back to the end of do-not-disturb if that is later).
+        {
+            const s = this.plugin.settings;
+            const now = new Date();
+            let nextAt = s.lastShownAt + s.intervalMinutes * 60_000;
+            if (
+                s.quietHoursEnabled &&
+                isInQuietHours(now, s.quietHoursStart, s.quietHoursEnd)
+            ) {
+                const dndEnd = quietHoursEndDate(now, s.quietHoursEnd);
+                if (dndEnd && dndEnd.getTime() > nextAt) nextAt = dndEnd.getTime();
+            }
+            const fmt = (ts: number): string => moment(ts).format("YYYY-MM-DD HH:mm");
+            const lastText = s.lastShownAt === 0 ? t("lastPopupNever") : fmt(s.lastShownAt);
+            const nextText =
+                nextAt <= now.getTime()
+                    ? t("nextPopupAsap")
+                    : t("nextPopupAt", { time: fmt(nextAt) });
+            new Setting(containerEl)
+                .setName(t("settingsNextPopup"))
+                .setDesc(t("settingsNextPopupDesc", { last: lastText, next: nextText }));
+        }
 
         new Setting(containerEl)
             .setName(t("settingsInterval"))

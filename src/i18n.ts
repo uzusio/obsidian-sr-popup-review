@@ -22,6 +22,11 @@ const en: Strings = {
     settingsStatus: "Spaced Repetition integration",
     settingsStatusOk: "Connected (Spaced Repetition v{version})",
     settingsStatusNg: "Unavailable: {reason}",
+    settingsNextPopup: "Popup schedule",
+    settingsNextPopupDesc: "Last shown: {last} — next: {next}",
+    lastPopupNever: "never",
+    nextPopupAsap: "within about a minute, as soon as a matching due card exists",
+    nextPopupAt: "{time} or later",
     settingsInterval: "Popup interval (minutes)",
     settingsIntervalDesc: "How often a popup may appear. Minimum 5 minutes.",
     settingsQuietHours: "Do not disturb",
@@ -49,7 +54,8 @@ const en: Strings = {
     settingsShowDeckName: "Show deck name",
     settingsShowDeckNameDesc: "Show the deck name and due count in the popup header.",
     settingsCheckOnStartup: "Check shortly after startup",
-    settingsCheckOnStartupDesc: "Run one check about 15 seconds after Obsidian starts, without waiting for the first interval.",
+    settingsCheckOnStartupDesc:
+        "Show one popup about 15 seconds after Obsidian starts if a matching card exists, regardless of the popup interval. Do-not-disturb still applies; while Spaced Repetition is still indexing, the check retries for a couple of minutes.",
 };
 
 const ja: Strings = {
@@ -74,6 +80,11 @@ const ja: Strings = {
     settingsStatus: "Spaced Repetition 連携",
     settingsStatusOk: "接続済み（Spaced Repetition v{version}）",
     settingsStatusNg: "利用できません: {reason}",
+    settingsNextPopup: "ポップアップ予定",
+    settingsNextPopupDesc: "前回の表示: {last} ／ 次の表示: {next}",
+    lastPopupNever: "まだ表示なし",
+    nextPopupAsap: "条件を満たすカードがあれば約1分以内",
+    nextPopupAt: "{time} 以降",
     settingsInterval: "ポップアップ間隔（分）",
     settingsIntervalDesc: "ポップアップを出す間隔。最小5分。",
     settingsQuietHours: "ポップアップ停止時間帯",
@@ -100,7 +111,8 @@ const ja: Strings = {
     settingsShowDeckName: "デッキ名を表示",
     settingsShowDeckNameDesc: "ポップアップのヘッダにデッキ名と期限枚数を表示します。",
     settingsCheckOnStartup: "起動直後にチェック",
-    settingsCheckOnStartupDesc: "Obsidian起動の約15秒後に1回チェックします（最初の間隔を待ちません）。",
+    settingsCheckOnStartupDesc:
+        "Obsidian起動の約15秒後、条件を満たすカードがあれば間隔に関係なく1回表示します。停止時間帯は優先されます。Spaced Repetition の準備中は数分間リトライします。",
 };
 
 /** "-" = follow Obsidian's app language (same convention as the SR plugin). */

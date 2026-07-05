@@ -4,6 +4,16 @@ import { t } from "./i18n";
 
 const TICK_MS = 60_000;
 const STARTUP_DELAY_MS = 15_000;
+/** SR indexes the vault on startup; on large vaults 15 s is not enough, so retry. */
+const STARTUP_MAX_ATTEMPTS = 8;
+
+/**
+ * auto    — the regular 1-minute tick; honors the popup interval and do-not-disturb.
+ * startup — the check-on-startup tick; ignores the interval, honors do-not-disturb,
+ *           logs every skip reason to the console for diagnosis.
+ * manual  — the "show popup now" command; ignores all gates and shows notices.
+ */
+export type TickMode = "auto" | "startup" | "manual";
 
 export class Scheduler {
     private ticking = false;
@@ -12,37 +22,60 @@ export class Scheduler {
     constructor(private plugin: SRPopupPlugin) {}
 
     start(): void {
-        this.plugin.registerInterval(window.setInterval(() => void this.tick(false), TICK_MS));
+        this.plugin.registerInterval(window.setInterval(() => void this.tick("auto"), TICK_MS));
         if (this.plugin.settings.checkOnStartup) {
-            window.setTimeout(() => void this.tick(false), STARTUP_DELAY_MS);
+            this.scheduleStartupCheck(1);
         }
     }
 
-    /** force=true (manual command) bypasses interval / quiet hours / SR-UI-open checks. */
-    async tick(force: boolean): Promise<void> {
+    async tick(mode: TickMode): Promise<void> {
         if (this.ticking) return;
         this.ticking = true;
         try {
-            await this.doTick(force);
+            await this.doTick(mode);
         } finally {
             this.ticking = false;
         }
     }
 
-    private async doTick(force: boolean): Promise<void> {
+    private scheduleStartupCheck(attempt: number): void {
+        window.setTimeout(() => void this.startupCheck(attempt), STARTUP_DELAY_MS);
+    }
+
+    private async startupCheck(attempt: number): Promise<void> {
+        const probe = this.plugin.bridge.probe();
+        if (probe.status === "notReady" && attempt < STARTUP_MAX_ATTEMPTS) {
+            console.debug(
+                `[sr-popup-review] startup check ${attempt}/${STARTUP_MAX_ATTEMPTS}: Spaced Repetition not ready yet, retrying in ${STARTUP_DELAY_MS / 1000}s`,
+            );
+            this.scheduleStartupCheck(attempt + 1);
+            return;
+        }
+        await this.tick("startup");
+    }
+
+    private async doTick(mode: TickMode): Promise<void> {
         const s = this.plugin.settings;
-        if (this.plugin.popup.isOpen) return;
-        if (!force) {
-            if (Date.now() - s.lastShownAt < s.intervalMinutes * 60_000) return;
-            if (
-                s.quietHoursEnabled &&
-                isInQuietHours(new Date(), s.quietHoursStart, s.quietHoursEnd)
-            )
-                return;
+        const log = (message: string): void => {
+            if (mode === "startup") console.debug(`[sr-popup-review] startup check: ${message}`);
+        };
+        if (this.plugin.popup.isOpen) {
+            log("a popup is already open");
+            return;
+        }
+        if (mode === "auto" && Date.now() - s.lastShownAt < s.intervalMinutes * 60_000) return;
+        if (
+            mode !== "manual" &&
+            s.quietHoursEnabled &&
+            isInQuietHours(new Date(), s.quietHoursStart, s.quietHoursEnd)
+        ) {
+            log("inside do-not-disturb hours");
+            return;
         }
         const probe = this.plugin.bridge.probe();
         if (probe.status !== "ok") {
-            if (force) {
+            log(`integration unavailable (${probe.status}: ${probe.reason ?? "?"})`);
+            if (mode === "manual") {
                 if (probe.status === "missing") new Notice(t("srMissing"));
                 else if (probe.status === "notReady") new Notice(t("srNotReady"));
                 else new Notice(t("incompatible", { reason: probe.reason ?? "?" }));
@@ -55,30 +88,47 @@ export class Scheduler {
             }
             return;
         }
-        if (!force && this.plugin.bridge.isSRReviewUIOpen()) return;
+        if (mode !== "manual" && this.plugin.bridge.isSRReviewUIOpen()) {
+            log("SR's own review UI is in focus");
+            return;
+        }
 
         const session = await this.plugin.bridge.openSession(s.dueCardsOnly, {
             mode: s.deckFilterMode,
             paths: s.deckFilterList,
         });
         if (!session) {
-            if (force) new Notice(t("nothingDue"));
+            log("no card matches (nothing due, or filtered out by the deck filter)");
+            if (mode === "manual") new Notice(t("nothingDue"));
             return;
         }
         s.lastShownAt = Date.now();
         await this.plugin.saveSettings();
         const shown = await this.plugin.popup.show(session, s.autoCloseSeconds, s.showDeckName);
-        if (!shown && force) new Notice(t("popupFailed"));
+        if (!shown) {
+            log("popup window failed to open");
+            if (mode === "manual") new Notice(t("popupFailed"));
+        }
     }
 }
 
-/** Quiet-hours check; supports ranges that cross midnight (e.g. 23:00–07:00). */
+/** Do-not-disturb check; supports ranges that cross midnight (e.g. 23:00–07:00). */
 export function isInQuietHours(now: Date, start: string, end: string): boolean {
     const a = parseHhmm(start);
     const b = parseHhmm(end);
     if (a === null || b === null || a === b) return false;
     const cur = now.getHours() * 60 + now.getMinutes();
     return a < b ? cur >= a && cur < b : cur >= a || cur < b;
+}
+
+/** Next moment the do-not-disturb window ends (call only while inside the window). */
+export function quietHoursEndDate(now: Date, end: string): Date | null {
+    const min = parseHhmm(end);
+    if (min === null) return null;
+    const d = new Date(now);
+    d.setHours(Math.floor(min / 60), min % 60, 0, 0);
+    if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
+    return d;
 }
 
 function parseHhmm(hhmm: string): number | null {

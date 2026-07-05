@@ -21,7 +21,7 @@ export default class SRPopupPlugin extends Plugin {
         this.addCommand({
             id: "show-review-popup-now",
             name: t("commandShowNow"),
-            callback: () => void this.scheduler.tick(true),
+            callback: () => void this.scheduler.tick("manual"),
         });
 
         this.app.workspace.onLayoutReady(() => this.scheduler.start());
