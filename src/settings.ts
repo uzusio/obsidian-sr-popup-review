@@ -136,23 +136,14 @@ export class SRPopupSettingTab extends PluginSettingTab {
                         if (v === "all" || v === "include" || v === "exclude") {
                             this.plugin.settings.deckFilterMode = v;
                             await this.plugin.saveSettings();
+                            this.display(); // show/hide the deck picker
                         }
                     }),
             );
 
-        new Setting(containerEl)
-            .setName(t("settingsDeckFilterList"))
-            .setDesc(t("settingsDeckFilterListDesc"))
-            .addTextArea((text) => {
-                text.setValue(this.plugin.settings.deckFilterList.join("\n")).onChange(
-                    async (v) => {
-                        this.plugin.settings.deckFilterList = normalizeDeckPaths(v.split("\n"));
-                        await this.plugin.saveSettings();
-                    },
-                );
-                text.inputEl.rows = 4;
-                text.inputEl.placeholder = "flashcards/韓国語";
-            });
+        if (this.plugin.settings.deckFilterMode !== "all") {
+            this.displayDeckPicker(containerEl);
+        }
 
         new Setting(containerEl)
             .setName(t("settingsDueOnly"))
@@ -183,5 +174,86 @@ export class SRPopupSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }),
             );
+    }
+
+    /**
+     * Deck picker: toggles for every deck SR currently knows, in tree order with
+     * indentation. A listed deck covers its subdecks, so decks implied by a listed
+     * ancestor show as checked-but-disabled. Falls back to a plain textarea when
+     * the deck tree is unavailable (SR still initializing).
+     */
+    private displayDeckPicker(containerEl: HTMLElement): void {
+        const decks = this.plugin.bridge.listDeckPaths();
+
+        if (decks.length === 0) {
+            new Setting(containerEl)
+                .setName(t("settingsDeckFilterList"))
+                .setDesc(t("settingsDeckFilterListDesc"))
+                .addTextArea((text) => {
+                    text.setValue(this.plugin.settings.deckFilterList.join("\n")).onChange(
+                        async (v) => {
+                            this.plugin.settings.deckFilterList = normalizeDeckPaths(v.split("\n"));
+                            await this.plugin.saveSettings();
+                        },
+                    );
+                    text.inputEl.rows = 4;
+                    text.inputEl.placeholder = "flashcards/韓国語";
+                });
+            return;
+        }
+
+        new Setting(containerEl)
+            .setName(t("settingsDeckFilterList"))
+            .setDesc(t("settingsDeckPickerDesc"))
+            .setHeading();
+
+        const list = () => this.plugin.settings.deckFilterList;
+        const coveringAncestor = (path: string): string | undefined =>
+            list().find((rule) => rule !== path && path.startsWith(rule + "/"));
+
+        for (const path of decks) {
+            const depth = path.split("/").length - 1;
+            const leaf = path.split("/").pop() ?? path;
+            const ancestor = coveringAncestor(path);
+            const row = new Setting(containerEl)
+                .setName(leaf)
+                .setDesc(ancestor ? t("deckImplied", { parent: ancestor }) : path);
+            row.settingEl.style.paddingLeft = `${depth * 24}px`;
+            row.addToggle((toggle) =>
+                toggle
+                    .setValue(ancestor !== undefined || list().includes(path))
+                    .setDisabled(ancestor !== undefined)
+                    .onChange(async (v) => {
+                        let next = list().filter((rule) => rule !== path);
+                        if (v) {
+                            // a new ancestor rule makes explicit descendant rules redundant
+                            next = next.filter((rule) => !rule.startsWith(path + "/"));
+                            next.push(path);
+                        }
+                        this.plugin.settings.deckFilterList = next;
+                        await this.plugin.saveSettings();
+                        this.display();
+                    }),
+            );
+        }
+
+        // Entries on the list that no current deck matches (renamed/empty decks etc.)
+        for (const rule of list().filter((r) => !decks.includes(r))) {
+            new Setting(containerEl)
+                .setName(rule)
+                .setDesc(t("deckNotFound"))
+                .addExtraButton((button) =>
+                    button
+                        .setIcon("trash")
+                        .setTooltip(t("remove"))
+                        .onClick(async () => {
+                            this.plugin.settings.deckFilterList = list().filter(
+                                (r) => r !== rule,
+                            );
+                            await this.plugin.saveSettings();
+                            this.display();
+                        }),
+                );
+        }
     }
 }

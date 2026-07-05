@@ -152,6 +152,30 @@ export class SRBridge {
         return await loader.loadReviewQueue();
     }
 
+    /**
+     * All deck paths currently known to SR (from its reviewable deck tree),
+     * in tree order, e.g. ["flashcards", "flashcards/韓国語", ...].
+     * Empty when SR is not ready — callers should fall back to manual input.
+     */
+    listDeckPaths(): string[] {
+        const result: string[] = [];
+        try {
+            const root = this.getSRPlugin()?.dataManager?.osrCore?.reviewableDeckTree;
+            const walk = (deck: any, prefix: string): void => {
+                for (const sub of deck?.subdecks ?? []) {
+                    if (typeof sub?.deckName !== "string") continue;
+                    const path = prefix.length > 0 ? `${prefix}/${sub.deckName}` : sub.deckName;
+                    result.push(path);
+                    walk(sub, path);
+                }
+            };
+            if (root) walk(root, "");
+        } catch {
+            /* SR not initialized — return what we have */
+        }
+        return result;
+    }
+
     /** Full deck path of the current card, e.g. "flashcards/韓国語" ("" if unknown). */
     private currentDeckPath(sequencer: any): string {
         try {

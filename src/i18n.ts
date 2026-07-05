@@ -38,6 +38,11 @@ const en: Strings = {
     settingsDeckFilterList: "Deck list",
     settingsDeckFilterListDesc:
         "One deck path per line, e.g. flashcards/korean. A rule also matches all of the deck's subdecks.",
+    settingsDeckPickerDesc:
+        "Toggle the decks to put on the list. A listed deck also covers all of its subdecks.",
+    deckImplied: "Covered via {parent}",
+    deckNotFound: "Not found in the current decks",
+    remove: "Remove",
     settingsDueOnly: "Due cards only",
     settingsDueOnlyDesc: "Only show popups for cards that are actually due. Turn off to also get popups for new cards.",
     settingsShowDeckName: "Show deck name",
@@ -84,6 +89,11 @@ const ja: Strings = {
     settingsDeckFilterList: "デッキリスト",
     settingsDeckFilterListDesc:
         "1行に1デッキパス（例: flashcards/韓国語）。指定したデッキのサブデッキにも適用されます。",
+    settingsDeckPickerDesc:
+        "リストに入れるデッキをトグルで選びます。選んだデッキのサブデッキにも適用されます。",
+    deckImplied: "{parent} 経由で適用中",
+    deckNotFound: "現在のデッキに存在しません",
+    remove: "削除",
     settingsDueOnly: "期限カードのみ",
     settingsDueOnlyDesc: "期限が来ているカードだけポップアップに出します。オフにすると新規カードでも出ます。",
     settingsShowDeckName: "デッキ名を表示",
