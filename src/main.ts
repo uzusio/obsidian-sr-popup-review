@@ -41,6 +41,11 @@ export default class SRPopupPlugin extends Plugin {
         ) {
             this.settings.quietHoursEnabled = false;
         }
+        // The former "exclude" deck filter mode was dropped in favor of a simple
+        // all / only-listed choice.
+        if ((data?.deckFilterMode as string) === "exclude") {
+            this.settings.deckFilterMode = "all";
+        }
         setLocaleOverride(this.settings.language);
     }
 

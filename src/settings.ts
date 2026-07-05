@@ -12,7 +12,7 @@ export interface SRPopupSettings {
     quietHoursEnd: string;
     autoCloseSeconds: number;
     dueCardsOnly: boolean;
-    deckFilterMode: "all" | "include" | "exclude";
+    deckFilterMode: "all" | "include";
     deckFilterList: string[];
     showDeckName: boolean;
     checkOnStartup: boolean;
@@ -142,10 +142,9 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 dropdown
                     .addOption("all", t("deckFilterAll"))
                     .addOption("include", t("deckFilterInclude"))
-                    .addOption("exclude", t("deckFilterExclude"))
                     .setValue(this.plugin.settings.deckFilterMode)
                     .onChange(async (v) => {
-                        if (v === "all" || v === "include" || v === "exclude") {
+                        if (v === "all" || v === "include") {
                             this.plugin.settings.deckFilterMode = v;
                             await this.plugin.saveSettings();
                             this.display(); // show/hide the deck picker
@@ -189,15 +188,17 @@ export class SRPopupSettingTab extends PluginSettingTab {
     }
 
     /**
-     * Deck picker: toggles for every deck SR currently knows, in tree order with
-     * indentation. A listed deck covers its subdecks, so decks implied by a listed
-     * ancestor show as checked-but-disabled. Falls back to a plain textarea when
-     * the deck tree is unavailable (SR still initializing).
+     * Dual-list deck picker: available decks on the left, target decks on the
+     * right, add/remove buttons in the middle. Lines are selected by clicking
+     * (multi-select works via Ctrl/Shift); double-clicking a line also moves it.
+     * Falls back to a plain textarea when the deck tree is unavailable
+     * (SR still initializing).
      */
     private displayDeckPicker(containerEl: HTMLElement): void {
-        const decks = this.plugin.bridge.listDeckPaths();
+        const known = this.plugin.bridge.listDeckPaths();
+        const listed = this.plugin.settings.deckFilterList;
 
-        if (decks.length === 0) {
+        if (known.length === 0 && listed.length === 0) {
             new Setting(containerEl)
                 .setName(t("settingsDeckFilterList"))
                 .setDesc(t("settingsDeckFilterListDesc"))
@@ -216,62 +217,57 @@ export class SRPopupSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName(t("settingsDeckFilterList"))
-            .setDesc(
-                t(
-                    this.plugin.settings.deckFilterMode === "include"
-                        ? "deckPickerIncludeDesc"
-                        : "deckPickerExcludeDesc",
-                ),
-            )
+            .setDesc(t("deckPickerIncludeDesc"))
             .setHeading();
 
-        const list = () => this.plugin.settings.deckFilterList;
-        const coveringAncestor = (path: string): string | undefined =>
-            list().find((rule) => rule !== path && path.startsWith(rule + "/"));
+        const wrap = containerEl.createDiv({ cls: "sr-popup-duallist" });
+        const makeColumn = (labelKey: string): HTMLSelectElement => {
+            const column = wrap.createDiv({ cls: "sr-popup-duallist-col" });
+            column.createDiv({ cls: "sr-popup-duallist-label", text: t(labelKey) });
+            const select = column.createEl("select");
+            select.multiple = true;
+            select.size = 10;
+            return select;
+        };
 
-        for (const path of decks) {
-            const depth = path.split("/").length - 1;
-            const leaf = path.split("/").pop() ?? path;
-            const ancestor = coveringAncestor(path);
-            const row = new Setting(containerEl)
-                .setName(leaf)
-                .setDesc(ancestor ? t("deckImplied", { parent: ancestor }) : path);
-            row.settingEl.style.paddingLeft = `${depth * 24}px`;
-            row.addToggle((toggle) =>
-                toggle
-                    .setValue(ancestor !== undefined || list().includes(path))
-                    .setDisabled(ancestor !== undefined)
-                    .onChange(async (v) => {
-                        let next = list().filter((rule) => rule !== path);
-                        if (v) {
-                            // a new ancestor rule makes explicit descendant rules redundant
-                            next = next.filter((rule) => !rule.startsWith(path + "/"));
-                            next.push(path);
-                        }
-                        this.plugin.settings.deckFilterList = next;
-                        await this.plugin.saveSettings();
-                        this.display();
-                    }),
+        const left = makeColumn("deckAvailable");
+        const buttons = wrap.createDiv({ cls: "sr-popup-duallist-buttons" });
+        const right = makeColumn("deckTarget");
+
+        for (const path of known.filter((p) => !listed.includes(p))) {
+            left.createEl("option", { text: path, attr: { value: path } });
+        }
+        for (const rule of listed) {
+            const label = known.includes(rule) ? rule : `${rule} — ${t("deckNotFound")}`;
+            right.createEl("option", { text: label, attr: { value: rule } });
+        }
+
+        const add = async (): Promise<void> => {
+            const selected = Array.from(left.selectedOptions).map((o) => o.value);
+            if (selected.length === 0) return;
+            const next = [...this.plugin.settings.deckFilterList];
+            for (const path of selected) {
+                if (!next.includes(path)) next.push(path);
+            }
+            this.plugin.settings.deckFilterList = next;
+            await this.plugin.saveSettings();
+            this.display();
+        };
+        const remove = async (): Promise<void> => {
+            const selected = new Set(Array.from(right.selectedOptions).map((o) => o.value));
+            if (selected.size === 0) return;
+            this.plugin.settings.deckFilterList = this.plugin.settings.deckFilterList.filter(
+                (rule) => !selected.has(rule),
             );
-        }
+            await this.plugin.saveSettings();
+            this.display();
+        };
 
-        // Entries on the list that no current deck matches (renamed/empty decks etc.)
-        for (const rule of list().filter((r) => !decks.includes(r))) {
-            new Setting(containerEl)
-                .setName(rule)
-                .setDesc(t("deckNotFound"))
-                .addExtraButton((button) =>
-                    button
-                        .setIcon("trash")
-                        .setTooltip(t("remove"))
-                        .onClick(async () => {
-                            this.plugin.settings.deckFilterList = list().filter(
-                                (r) => r !== rule,
-                            );
-                            await this.plugin.saveSettings();
-                            this.display();
-                        }),
-                );
-        }
+        const addButton = buttons.createEl("button", { text: t("deckAdd") });
+        const removeButton = buttons.createEl("button", { text: t("deckRemove") });
+        addButton.addEventListener("click", () => void add());
+        removeButton.addEventListener("click", () => void remove());
+        left.addEventListener("dblclick", () => void add());
+        right.addEventListener("dblclick", () => void remove());
     }
 }

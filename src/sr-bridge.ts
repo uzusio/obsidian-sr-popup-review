@@ -20,7 +20,7 @@ const REP_ITEM_TYPE_DUE = 1;
 const MAX_FILTER_SKIPS = 1000;
 
 export interface DeckFilter {
-    mode: "all" | "include" | "exclude";
+    mode: "all" | "include";
     /** Deck paths like "flashcards/韓国語"; a rule matches the deck itself and all subdecks. */
     paths: string[];
 }
@@ -33,9 +33,10 @@ export function normalizeDeckPaths(lines: string[]): string[] {
 }
 
 function deckAllowed(deckPath: string, filter: DeckFilter): boolean {
-    if (filter.mode === "all" || filter.paths.length === 0) return true;
-    const matched = filter.paths.some((p) => deckPath === p || deckPath.startsWith(p + "/"));
-    return filter.mode === "include" ? matched : !matched;
+    // An empty target list means "no restriction" — otherwise switching the mode
+    // would silently stop all popups until a deck is picked.
+    if (filter.mode !== "include" || filter.paths.length === 0) return true;
+    return filter.paths.some((p) => deckPath === p || deckPath.startsWith(p + "/"));
 }
 
 export interface ReviewSession {
