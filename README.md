@@ -1,4 +1,4 @@
-# SR Popup Review
+# Popup Review for Spaced Repetition
 
 [日本語版 README はこちら / Japanese README](README.ja.md)
 
@@ -26,13 +26,13 @@ Ratings are written through the Spaced Repetition plugin's **own review pipeline
 
 1. Install the [BRAT](https://github.com/TfTHacker/obsidian42-brat) community plugin.
 2. In BRAT settings, choose **Add beta plugin** and enter `uzusio/obsidian-sr-popup-review`.
-3. Enable **SR Popup Review** in *Settings → Community plugins*.
+3. Enable **Popup Review for Spaced Repetition** in *Settings → Community plugins*.
 
 ### Manual
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/uzusio/obsidian-sr-popup-review/releases).
 2. Put them into `<your vault>/.obsidian/plugins/sr-popup-review/`.
-3. Reload Obsidian and enable **SR Popup Review**.
+3. Reload Obsidian and enable **Popup Review for Spaced Repetition**.
 
 ## Using the popup
 

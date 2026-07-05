@@ -1,4 +1,4 @@
-# SR Popup Review
+# Popup Review for Spaced Repetition
 
 [English README](README.md)
 
@@ -26,13 +26,13 @@ Obsidianを開かなくても [Spaced Repetition](https://github.com/st3v3nmw/ob
 
 1. コミュニティプラグイン [BRAT](https://github.com/TfTHacker/obsidian42-brat) をインストール
 2. BRATの設定で **Add beta plugin** → `uzusio/obsidian-sr-popup-review` を入力
-3. 設定 → コミュニティプラグイン で **SR Popup Review** を有効化
+3. 設定 → コミュニティプラグイン で **Popup Review for Spaced Repetition** を有効化
 
 ### 手動
 
 1. [最新リリース](https://github.com/uzusio/obsidian-sr-popup-review/releases) から `main.js` / `manifest.json` / `styles.css` をダウンロード
 2. `<あなたのvault>/.obsidian/plugins/sr-popup-review/` に配置
-3. Obsidianをリロードして **SR Popup Review** を有効化
+3. Obsidianをリロードして **Popup Review for Spaced Repetition** を有効化
 
 ## ポップアップの使い方
 

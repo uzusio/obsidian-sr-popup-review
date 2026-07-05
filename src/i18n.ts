@@ -7,14 +7,14 @@ const en: Strings = {
     saved: "Saved",
     saving: "Saving…",
     ratingFailed:
-        "SR Popup Review: failed to save the review. See the developer console for details.",
-    srMissing: "SR Popup Review: the Spaced Repetition plugin is not enabled.",
-    srNotReady: "SR Popup Review: Spaced Repetition is still initializing. Try again in a moment.",
+        "Popup Review for Spaced Repetition: failed to save the review. See the developer console for details.",
+    srMissing: "Popup Review for Spaced Repetition: the Spaced Repetition plugin is not enabled.",
+    srNotReady: "Popup Review for Spaced Repetition: Spaced Repetition is still initializing. Try again in a moment.",
     incompatible:
-        "SR Popup Review: the installed Spaced Repetition version looks incompatible ({reason}). Popup reviews are disabled to keep your data safe.",
-    nothingDue: "SR Popup Review: no cards to review right now.",
+        "Popup Review for Spaced Repetition: the installed Spaced Repetition version looks incompatible ({reason}). Popup reviews are disabled to keep your data safe.",
+    nothingDue: "Popup Review for Spaced Repetition: no cards to review right now.",
     popupFailed:
-        "SR Popup Review: could not open the popup window. See the developer console for details.",
+        "Popup Review for Spaced Repetition: could not open the popup window. See the developer console for details.",
     commandShowNow: "Show review popup now",
     settingsLanguage: "Language",
     settingsLanguageDesc: "Language of this plugin's interface.",
@@ -59,14 +59,14 @@ const ja: Strings = {
     saved: "記録しました",
     saving: "保存中…",
     ratingFailed:
-        "SR Popup Review: 評価の書き込みに失敗しました。詳細は開発者コンソールを確認してください。",
-    srMissing: "SR Popup Review: Spaced Repetition プラグインが有効になっていません。",
-    srNotReady: "SR Popup Review: Spaced Repetition の初期化がまだ終わっていません。少し待ってからもう一度試してください。",
+        "Popup Review for Spaced Repetition: 評価の書き込みに失敗しました。詳細は開発者コンソールを確認してください。",
+    srMissing: "Popup Review for Spaced Repetition: Spaced Repetition プラグインが有効になっていません。",
+    srNotReady: "Popup Review for Spaced Repetition: Spaced Repetition の初期化がまだ終わっていません。少し待ってからもう一度試してください。",
     incompatible:
-        "SR Popup Review: インストールされている Spaced Repetition と互換性がありません（{reason}）。データ保護のためポップアップレビューを無効化しました。",
-    nothingDue: "SR Popup Review: 今レビューするカードはありません。",
+        "Popup Review for Spaced Repetition: インストールされている Spaced Repetition と互換性がありません（{reason}）。データ保護のためポップアップレビューを無効化しました。",
+    nothingDue: "Popup Review for Spaced Repetition: 今レビューするカードはありません。",
     popupFailed:
-        "SR Popup Review: ポップアップウィンドウを開けませんでした。詳細は開発者コンソールを確認してください。",
+        "Popup Review for Spaced Repetition: ポップアップウィンドウを開けませんでした。詳細は開発者コンソールを確認してください。",
     commandShowNow: "今すぐレビューポップアップを表示",
     settingsLanguage: "言語",
     settingsLanguageDesc: "このプラグインの表示言語。",
