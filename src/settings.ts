@@ -94,10 +94,11 @@ export class SRPopupSettingTab extends PluginSettingTab {
             }
             const fmt = (ts: number): string => moment(ts).format("YYYY-MM-DD HH:mm");
             const lastText = s.lastShownAt === 0 ? t("lastPopupNever") : fmt(s.lastShownAt);
-            const nextText =
-                nextAt <= now.getTime()
-                    ? t("nextPopupAsap")
-                    : t("nextPopupAt", { time: fmt(nextAt) });
+            const nextText = this.plugin.popup.isOpen
+                ? t("popupOpenNow")
+                : nextAt <= now.getTime()
+                  ? t("nextPopupAsap")
+                  : t("nextPopupAt", { time: fmt(nextAt) });
             new Setting(containerEl)
                 .setName(t("settingsNextPopup"))
                 .setDesc(t("settingsNextPopupDesc", { last: lastText, next: nextText }));

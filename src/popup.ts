@@ -8,6 +8,10 @@ const WIDTH = 400;
 const HEIGHT_FRONT = 260;
 const HEIGHT_REVEALED = 470;
 const MARGIN = 16;
+/** loadURL can hang if the window's renderer dies mid-load — time-box it. */
+const LOAD_TIMEOUT_MS = 15_000;
+/** How long ensureAlive() waits for the popup to answer a trivial script call. */
+const ALIVE_TIMEOUT_MS = 5_000;
 
 const ACTION_TO_RESPONSE: Record<string, ReviewResponseValue> = {
     again: ReviewResponse.Again,
@@ -47,6 +51,12 @@ export class PopupController {
     private win: any = null;
     private session: ReviewSession | null = null;
     private revealed = false;
+    /**
+     * Bumped on every show()/finish(). Async continuations (event loop, load,
+     * liveness probe) compare their captured value against the current one and
+     * abort when superseded, so a hung await can never act on a newer popup.
+     */
+    private generation = 0;
 
     constructor(
         private app: App,
@@ -68,10 +78,12 @@ export class PopupController {
             console.error("[sr-popup-review] @electron/remote is not available");
             return false;
         }
+        const gen = ++this.generation;
         this.session = session;
         this.revealed = false;
 
         const html = await this.buildHtml(session, showDeckName, autoCloseSeconds);
+        if (gen !== this.generation) return false;
         let win: any;
         try {
             win = new remote.BrowserWindow({
@@ -92,14 +104,24 @@ export class PopupController {
         }
         this.win = win;
         this.place(remote, HEIGHT_FRONT);
-        try {
-            await win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
-        } catch (e) {
-            console.error("[sr-popup-review] failed to load popup content", e);
+        const loaded = await Promise.race([
+            win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html)).then(
+                () => true,
+                (e: unknown) => {
+                    console.error("[sr-popup-review] failed to load popup content", e);
+                    return false;
+                },
+            ),
+            new Promise<boolean>((resolve) =>
+                window.setTimeout(() => resolve(false), LOAD_TIMEOUT_MS),
+            ),
+        ]);
+        if (gen !== this.generation) return false;
+        if (!loaded || !this.isOpen) {
+            console.error("[sr-popup-review] popup content did not load in time");
             this.finish();
             return false;
         }
-        if (!this.isOpen) return false;
         try {
             win.showInactive();
         } catch (e) {
@@ -107,8 +129,36 @@ export class PopupController {
             this.finish();
             return false;
         }
-        void this.eventLoop();
+        void this.eventLoop(gen);
         return true;
+    }
+
+    /**
+     * True if the popup window answers a trivial script call within a few
+     * seconds. A window whose renderer died (system sleep, the OS reclaiming
+     * the process) still reports isDestroyed() === false but never responds —
+     * destroy it so it cannot block future popups forever.
+     */
+    async ensureAlive(): Promise<boolean> {
+        if (!this.isOpen) return false;
+        const gen = this.generation;
+        let alive = false;
+        try {
+            alive = await Promise.race([
+                this.win.webContents.executeJavaScript("1", true).then(() => true),
+                new Promise<boolean>((resolve) =>
+                    window.setTimeout(() => resolve(false), ALIVE_TIMEOUT_MS),
+                ),
+            ]);
+        } catch {
+            alive = false;
+        }
+        if (alive) return true;
+        if (gen === this.generation && this.isOpen) {
+            console.warn("[sr-popup-review] popup window is unresponsive; destroying it");
+            this.finish();
+        }
+        return false;
     }
 
     close(): void {
@@ -119,15 +169,18 @@ export class PopupController {
      * Long-poll loop: each iteration blocks until the popup emits an event
      * ("revealed", a rating action, or "close"). The executeJavaScript promise
      * rejects when the window is closed/destroyed, which also ends the loop.
+     * `gen` guards every continuation: if this popup was superseded while an
+     * await was pending, the stale loop exits without touching the new popup.
      */
-    private async eventLoop(): Promise<void> {
-        while (this.isOpen) {
+    private async eventLoop(gen: number): Promise<void> {
+        while (gen === this.generation && this.isOpen) {
             let event: unknown;
             try {
                 event = await this.win.webContents.executeJavaScript("window.__nextEvent()", true);
             } catch {
                 break; // window closed or content gone
             }
+            if (gen !== this.generation) return;
             if (!this.isOpen) break;
             if (event === "revealed") {
                 this.revealed = true;
@@ -137,10 +190,11 @@ export class PopupController {
             }
             if (event === "close") break;
             const response = ACTION_TO_RESPONSE[String(event)];
-            if (response === undefined || !this.session) break;
+            const session = this.session;
+            if (response === undefined || !session) break;
             const started = Date.now();
             try {
-                await this.session.rate(response);
+                await session.rate(response);
                 console.debug(
                     `[sr-popup-review] review (${String(event)}) written in ${Date.now() - started} ms`,
                 );
@@ -149,6 +203,7 @@ export class PopupController {
                 new Notice(t("ratingFailed"));
                 break;
             }
+            if (gen !== this.generation) return;
             try {
                 await this.win?.webContents?.executeJavaScript(
                     "window.__showDone && window.__showDone()",
@@ -160,7 +215,7 @@ export class PopupController {
             // The popup shows the done flash and closes itself; the next
             // __nextEvent() call rejects at that point and ends the loop.
         }
-        this.finish();
+        if (gen === this.generation) this.finish();
     }
 
     private place(remote: any, height: number): void {
@@ -178,6 +233,7 @@ export class PopupController {
     }
 
     private finish(): void {
+        this.generation++; // invalidate any in-flight event loop / load / probe
         const win = this.win;
         this.win = null;
         this.session = null;
