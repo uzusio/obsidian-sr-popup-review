@@ -12,6 +12,10 @@ const MARGIN = 16;
 const LOAD_TIMEOUT_MS = 15_000;
 /** How long ensureAlive() waits for the popup to answer a trivial script call. */
 const ALIVE_TIMEOUT_MS = 5_000;
+/** A review write that has not settled by then is reported and the popup closed. */
+const RATE_TIMEOUT_MS = 90_000;
+/** After this long on "Saving…", the popup unlocks its close button (escape hatch). */
+const SAVING_STUCK_MS = 60_000;
 
 const ACTION_TO_RESPONSE: Record<string, ReviewResponseValue> = {
     again: ReviewResponse.Again,
@@ -129,6 +133,15 @@ export class PopupController {
             this.finish();
             return false;
         }
+        try {
+            // The default always-on-top band loses to overlay apps and borderless
+            // fullscreen windows; raise to the highest band and push to its top.
+            // (Exclusive-fullscreen games still cover it — an OS-level limitation.)
+            win.setAlwaysOnTop?.(true, "screen-saver");
+            win.moveTop?.();
+        } catch {
+            /* cosmetic */
+        }
         void this.eventLoop(gen);
         return true;
     }
@@ -192,17 +205,35 @@ export class PopupController {
             const response = ACTION_TO_RESPONSE[String(event)];
             const session = this.session;
             if (response === undefined || !session) break;
+            console.debug(`[sr-popup-review] rating received (${String(event)}); writing...`);
             const started = Date.now();
-            try {
-                await session.rate(response);
-                console.debug(
-                    `[sr-popup-review] review (${String(event)}) written in ${Date.now() - started} ms`,
-                );
-            } catch (e) {
-                console.error("[sr-popup-review] failed to save review", e);
+            const ratePromise = session.rate(response).then(
+                () => "ok" as const,
+                (e: unknown) => {
+                    console.error("[sr-popup-review] failed to save review", e);
+                    return "error" as const;
+                },
+            );
+            const result = await Promise.race([
+                ratePromise,
+                new Promise<"timeout">((resolve) =>
+                    window.setTimeout(() => resolve("timeout"), RATE_TIMEOUT_MS),
+                ),
+            ]);
+            if (result === "error") {
                 new Notice(t("ratingFailed"));
                 break;
             }
+            if (result === "timeout") {
+                console.error(
+                    `[sr-popup-review] review write did not settle within ${RATE_TIMEOUT_MS / 1000}s; closing the popup — check the card's schedule comment`,
+                );
+                new Notice(t("ratingTimeout"));
+                break;
+            }
+            console.debug(
+                `[sr-popup-review] review (${String(event)}) written in ${Date.now() - started} ms`,
+            );
             if (gen !== this.generation) return;
             try {
                 await this.win?.webContents?.executeJavaScript(
@@ -397,6 +428,8 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
 
     var byAction = {};
     var chosen = false;
+    var savingStuck = false;
+    var savingTimer = null;
     function choose(action) {
         if (chosen || !revealed) return;
         chosen = true;
@@ -404,23 +437,32 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
         Object.keys(byAction).forEach(function (k) { byAction[k].disabled = true; });
         if (byAction[action]) byAction[action].classList.add("chosen");
         saving.hidden = false;
+        // Escape hatch: if the plugin never answers (hung write, blocked main
+        // window), unlock closing so the popup cannot become a stuck ornament.
+        savingTimer = setTimeout(function () {
+            savingStuck = true;
+            saving.textContent = ${JSON.stringify(t("savingStuck"))};
+        }, ${SAVING_STUCK_MS});
         emit(action);
+    }
+    function requestClose() {
+        if (savingStuck) { window.close(); return; }
+        if (!chosen) emit("close");
     }
 
     revealBtn.addEventListener("click", reveal);
-    document.getElementById("closeBtn").addEventListener("click", function () {
-        if (!chosen) emit("close");
-    });
+    document.getElementById("closeBtn").addEventListener("click", requestClose);
     Array.prototype.forEach.call(ratings.querySelectorAll(".action"), function (b) {
         byAction[b.getAttribute("data-action")] = b;
         b.addEventListener("click", function () { choose(b.getAttribute("data-action")); });
     });
     window.__showDone = function () {
+        if (savingTimer) clearTimeout(savingTimer);
         document.getElementById("done").hidden = false;
         setTimeout(function () { window.close(); }, 700);
     };
     document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") { if (!chosen) emit("close"); return; }
+        if (e.key === "Escape") { requestClose(); return; }
         if (!revealed && (e.key === " " || e.key === "Enter")) {
             e.preventDefault();
             reveal();
