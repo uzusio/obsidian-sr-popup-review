@@ -19,6 +19,15 @@ const en: Strings = {
     popupFailed:
         "Popup Review for Spaced Repetition: could not open the popup window. See the developer console for details.",
     commandShowNow: "Show review popup now",
+    commandTogglePause: "Toggle popup pause",
+    ribbonPause: "Pause review popups",
+    ribbonResume: "Resume review popups",
+    pausedOn: "Popup Review for Spaced Repetition: popups paused.",
+    pausedOff: "Popup Review for Spaced Repetition: popups resumed.",
+    pausedNow: "paused",
+    settingsPaused: "Pause popups",
+    settingsPausedDesc:
+        "Temporarily stop automatic popups. The bell icon in the ribbon and the toggle-pause command flip this too. The manual show-popup-now command still works while paused.",
     settingsLanguage: "Language",
     settingsLanguageDesc: "Language of this plugin's interface.",
     languageDefault: "Obsidian's default",
@@ -81,6 +90,15 @@ const ja: Strings = {
     popupFailed:
         "Popup Review for Spaced Repetition: ポップアップウィンドウを開けませんでした。詳細は開発者コンソールを確認してください。",
     commandShowNow: "今すぐレビューポップアップを表示",
+    commandTogglePause: "ポップアップの一時停止を切り替え",
+    ribbonPause: "レビューポップアップを一時停止",
+    ribbonResume: "レビューポップアップを再開",
+    pausedOn: "Popup Review for Spaced Repetition: ポップアップを一時停止しました。",
+    pausedOff: "Popup Review for Spaced Repetition: ポップアップを再開しました。",
+    pausedNow: "一時停止中",
+    settingsPaused: "ポップアップを一時停止",
+    settingsPausedDesc:
+        "自動ポップアップを一時的に止めます。リボン（左サイドバー）のベルアイコンとコマンドでも切り替えられます。停止中でも「今すぐ表示」コマンドは動きます。",
     settingsLanguage: "言語",
     settingsLanguageDesc: "このプラグインの表示言語。",
     languageDefault: "Obsidianの設定に従う",

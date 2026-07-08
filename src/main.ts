@@ -1,4 +1,4 @@
-import { Plugin } from "obsidian";
+import { Notice, Plugin, setIcon } from "obsidian";
 import { SRBridge } from "./sr-bridge";
 import { PopupController } from "./popup";
 import { Scheduler } from "./scheduler";
@@ -10,6 +10,7 @@ export default class SRPopupPlugin extends Plugin {
     bridge!: SRBridge;
     popup!: PopupController;
     scheduler!: Scheduler;
+    private ribbonIconEl: HTMLElement | null = null;
 
     async onload(): Promise<void> {
         await this.loadSettings();
@@ -23,8 +24,35 @@ export default class SRPopupPlugin extends Plugin {
             name: t("commandShowNow"),
             callback: () => void this.scheduler.tick("manual"),
         });
+        this.addCommand({
+            id: "toggle-popup-pause",
+            name: t("commandTogglePause"),
+            callback: () => void this.togglePaused(),
+        });
+        this.ribbonIconEl = this.addRibbonIcon("bell", "", () => void this.togglePaused());
+        this.updateRibbonIcon();
 
         this.app.workspace.onLayoutReady(() => this.scheduler.start());
+    }
+
+    async togglePaused(): Promise<void> {
+        await this.setPaused(!this.settings.paused);
+    }
+
+    async setPaused(paused: boolean): Promise<void> {
+        this.settings.paused = paused;
+        await this.saveSettings();
+        this.updateRibbonIcon();
+        new Notice(t(paused ? "pausedOn" : "pausedOff"));
+    }
+
+    private updateRibbonIcon(): void {
+        if (!this.ribbonIconEl) return;
+        setIcon(this.ribbonIconEl, this.settings.paused ? "bell-off" : "bell");
+        this.ribbonIconEl.setAttribute(
+            "aria-label",
+            t(this.settings.paused ? "ribbonResume" : "ribbonPause"),
+        );
     }
 
     onunload(): void {

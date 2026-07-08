@@ -7,6 +7,8 @@ import { setLocaleOverride, t } from "./i18n";
 export interface SRPopupSettings {
     /** "-" = follow Obsidian's app language. */
     language: "-" | "en" | "ja";
+    /** Pause switch: no automatic popups while true (manual command still works). */
+    paused: boolean;
     intervalMinutes: number;
     quietHoursEnabled: boolean;
     quietHoursStart: string;
@@ -23,6 +25,7 @@ export interface SRPopupSettings {
 
 export const DEFAULT_SETTINGS: SRPopupSettings = {
     language: "-",
+    paused: false,
     intervalMinutes: 120,
     quietHoursEnabled: true,
     quietHoursStart: "01:00",
@@ -96,13 +99,25 @@ export class SRPopupSettingTab extends PluginSettingTab {
             const lastText = s.lastShownAt === 0 ? t("lastPopupNever") : fmt(s.lastShownAt);
             const nextText = this.plugin.popup.isOpen
                 ? t("popupOpenNow")
-                : nextAt <= now.getTime()
-                  ? t("nextPopupAsap")
-                  : t("nextPopupAt", { time: fmt(nextAt) });
+                : s.paused
+                  ? t("pausedNow")
+                  : nextAt <= now.getTime()
+                    ? t("nextPopupAsap")
+                    : t("nextPopupAt", { time: fmt(nextAt) });
             new Setting(containerEl)
                 .setName(t("settingsNextPopup"))
                 .setDesc(t("settingsNextPopupDesc", { last: lastText, next: nextText }));
         }
+
+        new Setting(containerEl)
+            .setName(t("settingsPaused"))
+            .setDesc(t("settingsPausedDesc"))
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.settings.paused).onChange(async (v) => {
+                    await this.plugin.setPaused(v);
+                    this.display(); // refresh the schedule line
+                }),
+            );
 
         new Setting(containerEl)
             .setName(t("settingsInterval"))

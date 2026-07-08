@@ -16,6 +16,15 @@ const ALIVE_TIMEOUT_MS = 5_000;
 const RATE_TIMEOUT_MS = 90_000;
 /** After this long on "Saving…", the popup unlocks its close button (escape hatch). */
 const SAVING_STUCK_MS = 60_000;
+/**
+ * Heartbeat: the plugin pings the popup every 30 s; if pings stop for 5 minutes
+ * the popup closes itself. Prevents a popup from outliving Obsidian (a hung or
+ * quit main window whose onunload never ran left zombie popups behind).
+ * The send interval lives in the (throttleable) main window, so the dead
+ * threshold is generous.
+ */
+const HEARTBEAT_SEND_MS = 30_000;
+const HEARTBEAT_DEAD_MS = 5 * 60_000;
 
 const ACTION_TO_RESPONSE: Record<string, ReviewResponseValue> = {
     again: ReviewResponse.Again,
@@ -55,6 +64,7 @@ export class PopupController {
     private win: any = null;
     private session: ReviewSession | null = null;
     private revealed = false;
+    private heartbeatTimer: number | null = null;
     /**
      * Bumped on every show()/finish(). Async continuations (event loop, load,
      * liveness probe) compare their captured value against the current one and
@@ -142,6 +152,13 @@ export class PopupController {
         } catch {
             /* cosmetic */
         }
+        this.heartbeatTimer = window.setInterval(() => {
+            this.win?.webContents
+                ?.executeJavaScript("window.__heartbeat && window.__heartbeat()", true)
+                .catch(() => {
+                    /* window gone; the event loop handles cleanup */
+                });
+        }, HEARTBEAT_SEND_MS);
         void this.eventLoop(gen);
         return true;
     }
@@ -265,6 +282,10 @@ export class PopupController {
 
     private finish(): void {
         this.generation++; // invalidate any in-flight event loop / load / probe
+        if (this.heartbeatTimer !== null) {
+            window.clearInterval(this.heartbeatTimer);
+            this.heartbeatTimer = null;
+        }
         const win = this.win;
         this.win = null;
         this.session = null;
@@ -398,6 +419,14 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
         if (events.length) return Promise.resolve(events.shift());
         return new Promise(function (resolve) { waiters.push(resolve); });
     };
+
+    // Self-destruct when the plugin's heartbeat stops (Obsidian quit or hung):
+    // a popup must never outlive its owner.
+    var lastHeartbeat = Date.now();
+    window.__heartbeat = function () { lastHeartbeat = Date.now(); };
+    setInterval(function () {
+        if (Date.now() - lastHeartbeat > ${HEARTBEAT_DEAD_MS}) window.close();
+    }, 30000);
 
     var revealBtn = document.getElementById("revealBtn");
     var ratings = document.getElementById("ratings");

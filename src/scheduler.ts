@@ -78,6 +78,10 @@ export class Scheduler {
         const log = (message: string): void => {
             console.debug(`[sr-popup-review] tick(${mode}): ${message}`);
         };
+        if (mode !== "manual" && s.paused) {
+            log("paused by the user");
+            return;
+        }
         if (this.plugin.popup.isOpen) {
             if (await this.plugin.popup.ensureAlive()) {
                 log("a popup is already open");
