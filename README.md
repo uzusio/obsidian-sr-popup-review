@@ -47,14 +47,14 @@ The rating buttons use the labels you configured in the Spaced Repetition plugin
 
 You can also open a popup at any time with the command **"Show review popup now"** (via the command palette).
 
-To pause automatic popups, click the **bell icon in the ribbon** (left sidebar), use the **"Toggle popup pause"** command, or flip the toggle in settings — all three control the same switch. The manual show-popup-now command still works while paused.
+To pause automatic popups, click the **bell icon in the status bar** (bottom right), use the **"Toggle popup pause"** command, or flip the toggle in settings — all three control the same switch. The manual show-popup-now command still works while paused.
 
 ## Settings
 
 | Setting | Default | Description |
 | --- | --- | --- |
 | Language | Obsidian's default | Interface language of this plugin (English / 日本語) |
-| Pause popups | off | Temporarily stop automatic popups (also toggled by the ribbon bell icon and a command) |
+| Pause popups | off | Temporarily stop automatic popups (also toggled by the status-bar bell icon and a command) |
 | Popup interval (minutes) | 120 | How often a popup may appear (minimum 5) |
 | Do not disturb | on, 01:00–09:00 | Toggle plus a time range with no popups; supports ranges across midnight |
 | Auto-close (seconds) | 90 | Closes an untouched popup (nothing is written); 0 disables |

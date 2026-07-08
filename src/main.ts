@@ -10,7 +10,7 @@ export default class SRPopupPlugin extends Plugin {
     bridge!: SRBridge;
     popup!: PopupController;
     scheduler!: Scheduler;
-    private ribbonIconEl: HTMLElement | null = null;
+    private statusBarIconEl: HTMLElement | null = null;
 
     async onload(): Promise<void> {
         await this.loadSettings();
@@ -29,8 +29,11 @@ export default class SRPopupPlugin extends Plugin {
             name: t("commandTogglePause"),
             callback: () => void this.togglePaused(),
         });
-        this.ribbonIconEl = this.addRibbonIcon("bell", "", () => void this.togglePaused());
-        this.updateRibbonIcon();
+        const statusBarItem = this.addStatusBarItem();
+        statusBarItem.addClass("mod-clickable");
+        statusBarItem.onClickEvent(() => void this.togglePaused());
+        this.statusBarIconEl = statusBarItem.createSpan({ cls: "status-bar-item-icon" });
+        this.updatePauseIndicator();
 
         this.app.workspace.onLayoutReady(() => this.scheduler.start());
     }
@@ -42,17 +45,17 @@ export default class SRPopupPlugin extends Plugin {
     async setPaused(paused: boolean): Promise<void> {
         this.settings.paused = paused;
         await this.saveSettings();
-        this.updateRibbonIcon();
+        this.updatePauseIndicator();
         new Notice(t(paused ? "pausedOn" : "pausedOff"));
     }
 
-    private updateRibbonIcon(): void {
-        if (!this.ribbonIconEl) return;
-        setIcon(this.ribbonIconEl, this.settings.paused ? "bell-off" : "bell");
-        this.ribbonIconEl.setAttribute(
-            "aria-label",
-            t(this.settings.paused ? "ribbonResume" : "ribbonPause"),
-        );
+    private updatePauseIndicator(): void {
+        if (!this.statusBarIconEl) return;
+        setIcon(this.statusBarIconEl, this.settings.paused ? "bell-off" : "bell");
+        const label = t(this.settings.paused ? "statusBarResume" : "statusBarPause");
+        const container = this.statusBarIconEl.parentElement;
+        container?.setAttribute("aria-label", label);
+        container?.setAttribute("data-tooltip-position", "top");
     }
 
     onunload(): void {
