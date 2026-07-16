@@ -2,7 +2,53 @@ import { App, Component, MarkdownRenderer, Notice } from "obsidian";
 import { ReviewResponse, ReviewResponseValue, ReviewSession } from "./sr-bridge";
 import { t } from "./i18n";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+// ---------------------------------------------------------------------------
+// Structural types for the Electron pieces this plugin touches via
+// @electron/remote. Every member is optional and guarded before use, because
+// the remote bridge differs across Obsidian/Electron versions.
+// ---------------------------------------------------------------------------
+
+interface Bounds {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+interface WebContentsLike {
+    executeJavaScript?: (code: string, userGesture?: boolean) => Promise<unknown>;
+}
+
+interface BrowserWindowLike {
+    isDestroyed?: () => boolean;
+    destroy?: () => void;
+    loadURL?: (url: string) => Promise<void>;
+    showInactive?: () => void;
+    setAlwaysOnTop?: (flag: boolean, level?: string) => void;
+    moveTop?: () => void;
+    setBounds?: (bounds: Bounds) => void;
+    webContents?: WebContentsLike;
+}
+
+type BrowserWindowCtor = new (options: Record<string, unknown>) => BrowserWindowLike;
+
+interface ElectronRemoteLike {
+    BrowserWindow?: BrowserWindowCtor;
+    screen?: {
+        getPrimaryDisplay?: () => { workArea?: Bounds } | undefined;
+    };
+}
+
+function getRemote(): ElectronRemoteLike | null {
+    try {
+        const requireFn = (window as Window & { require?: (module: string) => unknown }).require;
+        if (typeof requireFn !== "function") return null;
+        const remote = requireFn("@electron/remote");
+        return remote ? (remote) : null;
+    } catch {
+        return null;
+    }
+}
 
 const WIDTH = 400;
 const HEIGHT_FRONT = 260;
@@ -33,14 +79,6 @@ const ACTION_TO_RESPONSE: Record<string, ReviewResponseValue> = {
     easy: ReviewResponse.Easy,
 };
 
-function getRemote(): any | null {
-    try {
-        return (window as any).require?.("@electron/remote") ?? null;
-    } catch {
-        return null;
-    }
-}
-
 function escapeHtml(s: string): string {
     return s
         .replace(/&/g, "&amp;")
@@ -61,7 +99,7 @@ function escapeHtml(s: string): string {
  * still avoided (fragile across Electron versions).
  */
 export class PopupController {
-    private win: any = null;
+    private win: BrowserWindowLike | null = null;
     private session: ReviewSession | null = null;
     private revealed = false;
     private heartbeatTimer: number | null = null;
@@ -88,7 +126,8 @@ export class PopupController {
     ): Promise<boolean> {
         if (this.isOpen) return false;
         const remote = getRemote();
-        if (!remote?.BrowserWindow || !remote?.screen) {
+        const BrowserWindowClass = remote?.BrowserWindow;
+        if (typeof BrowserWindowClass !== "function" || !remote?.screen) {
             console.error("[sr-popup-review] @electron/remote is not available");
             return false;
         }
@@ -98,9 +137,9 @@ export class PopupController {
 
         const html = await this.buildHtml(session, showDeckName, autoCloseSeconds);
         if (gen !== this.generation) return false;
-        let win: any;
+        let win: BrowserWindowLike;
         try {
-            win = new remote.BrowserWindow({
+            win = new BrowserWindowClass({
                 width: WIDTH,
                 height: HEIGHT_FRONT,
                 frame: false,
@@ -118,14 +157,19 @@ export class PopupController {
         }
         this.win = win;
         this.place(remote, HEIGHT_FRONT);
+        const url = "data:text/html;charset=utf-8," + encodeURIComponent(html);
+        const loadPromise =
+            typeof win.loadURL === "function"
+                ? win.loadURL(url).then(
+                      () => true,
+                      (e: unknown) => {
+                          console.error("[sr-popup-review] failed to load popup content", e);
+                          return false;
+                      },
+                  )
+                : Promise.resolve(false);
         const loaded = await Promise.race([
-            win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html)).then(
-                () => true,
-                (e: unknown) => {
-                    console.error("[sr-popup-review] failed to load popup content", e);
-                    return false;
-                },
-            ),
+            loadPromise,
             new Promise<boolean>((resolve) =>
                 window.setTimeout(() => resolve(false), LOAD_TIMEOUT_MS),
             ),
@@ -137,7 +181,7 @@ export class PopupController {
             return false;
         }
         try {
-            win.showInactive();
+            win.showInactive?.();
         } catch (e) {
             console.error("[sr-popup-review] failed to show popup", e);
             this.finish();
@@ -153,14 +197,16 @@ export class PopupController {
             /* cosmetic */
         }
         this.heartbeatTimer = window.setInterval(() => {
-            this.win?.webContents
-                ?.executeJavaScript("window.__heartbeat && window.__heartbeat()", true)
-                .catch(() => {
-                    /* window gone; the event loop handles cleanup */
-                });
+            this.execInPopup("window.__heartbeat && window.__heartbeat()").catch(() => {
+                /* window gone; the event loop handles cleanup */
+            });
         }, HEARTBEAT_SEND_MS);
         void this.eventLoop(gen);
         return true;
+    }
+
+    close(): void {
+        this.finish();
     }
 
     /**
@@ -175,7 +221,7 @@ export class PopupController {
         let alive = false;
         try {
             alive = await Promise.race([
-                this.win.webContents.executeJavaScript("1", true).then(() => true),
+                this.execInPopup("1").then(() => true),
                 new Promise<boolean>((resolve) =>
                     window.setTimeout(() => resolve(false), ALIVE_TIMEOUT_MS),
                 ),
@@ -191,8 +237,13 @@ export class PopupController {
         return false;
     }
 
-    close(): void {
-        this.finish();
+    /** Runs a script in the popup window; rejects if the window is unavailable. */
+    private execInPopup(code: string): Promise<unknown> {
+        const webContents = this.win?.webContents;
+        if (!webContents || typeof webContents.executeJavaScript !== "function") {
+            return Promise.reject(new Error("popup webContents unavailable"));
+        }
+        return webContents.executeJavaScript(code, true);
     }
 
     /**
@@ -206,7 +257,7 @@ export class PopupController {
         while (gen === this.generation && this.isOpen) {
             let event: unknown;
             try {
-                event = await this.win.webContents.executeJavaScript("window.__nextEvent()", true);
+                event = await this.execInPopup("window.__nextEvent()");
             } catch {
                 break; // window closed or content gone
             }
@@ -253,10 +304,7 @@ export class PopupController {
             );
             if (gen !== this.generation) return;
             try {
-                await this.win?.webContents?.executeJavaScript(
-                    "window.__showDone && window.__showDone()",
-                    true,
-                );
+                await this.execInPopup("window.__showDone && window.__showDone()");
             } catch {
                 /* window may already be gone; the review is saved either way */
             }
@@ -266,10 +314,11 @@ export class PopupController {
         if (gen === this.generation) this.finish();
     }
 
-    private place(remote: any, height: number): void {
+    private place(remote: ElectronRemoteLike, height: number): void {
         try {
-            const workArea = remote.screen.getPrimaryDisplay().workArea;
-            this.win?.setBounds({
+            const workArea = remote.screen?.getPrimaryDisplay?.()?.workArea;
+            if (!workArea) return;
+            this.win?.setBounds?.({
                 x: Math.round(workArea.x + workArea.width - WIDTH - MARGIN),
                 y: Math.round(workArea.y + workArea.height - height - MARGIN),
                 width: WIDTH,
@@ -290,14 +339,14 @@ export class PopupController {
         this.win = null;
         this.session = null;
         try {
-            if (win && win.isDestroyed?.() !== true) win.destroy();
+            if (win && win.isDestroyed?.() !== true) win.destroy?.();
         } catch {
             /* already gone */
         }
     }
 
     private async renderMarkdown(markdown: string): Promise<string> {
-        const el = document.createElement("div");
+        const el = createDiv();
         try {
             await MarkdownRenderer.render(this.app, markdown, el, "", this.owner);
             return el.innerHTML;
@@ -314,7 +363,7 @@ export class PopupController {
     ): Promise<string> {
         const frontHtml = await this.renderMarkdown(session.front);
         const backHtml = await this.renderMarkdown(session.back);
-        const dark = document.body.classList.contains("theme-dark");
+        const dark = activeDocument.body.classList.contains("theme-dark");
         const headerParts: string[] = [];
         if (showDeckName && session.deckName) headerParts.push(escapeHtml(session.deckName));
         headerParts.push(

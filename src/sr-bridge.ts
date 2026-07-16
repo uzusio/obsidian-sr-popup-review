@@ -1,8 +1,89 @@
 import { App } from "obsidian";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 const SR_PLUGIN_ID = "obsidian-spaced-repetition";
+
+// ---------------------------------------------------------------------------
+// Structural types for the Spaced Repetition internals this plugin touches.
+// They mirror obsidian-spaced-repetition v1.15.4. Every member is optional and
+// probed before use, so an incompatible future SR version fails the probe
+// instead of crashing or writing through an unknown code path.
+// ---------------------------------------------------------------------------
+
+interface AppWithPlugins extends App {
+    plugins?: {
+        enabledPlugins?: Set<string>;
+        plugins?: Record<string, unknown>;
+    };
+}
+
+interface SRSettingsLike {
+    flashcardAgainText?: unknown;
+    flashcardHardText?: unknown;
+    flashcardGoodText?: unknown;
+    flashcardEasyText?: unknown;
+}
+
+interface SRTopicPath {
+    path?: unknown;
+}
+
+interface SRDeck {
+    deckName?: unknown;
+    subdecks?: unknown;
+    getTopicPath?: () => SRTopicPath | undefined;
+    getDistinctRepItemCount?: (repItemType: number, includeSubdecks: boolean) => number;
+}
+
+interface SRCard {
+    front?: unknown;
+    back?: unknown;
+    hasSchedule?: unknown;
+}
+
+interface SRSequencer {
+    hasCurrentCard?: unknown;
+    currentCard?: SRCard | null;
+    currentDeck?: SRDeck | null;
+    processReview?: (response: number) => Promise<void>;
+    skipCurrentCard?: () => void;
+}
+
+interface SRReviewQueueLoader {
+    loadReviewQueue?: () => Promise<SRSequencer>;
+}
+
+interface SRTabViewManager {
+    openSRTabView?: (loader: SRReviewQueueLoader) => Promise<void>;
+}
+
+interface SRUIManager {
+    openDeckContainer?: (reviewMode: number) => Promise<void>;
+    openFlashcardModal?: (loader: SRReviewQueueLoader) => void;
+    focusObsidianWindow?: () => void;
+    getSRInFocusState?: () => boolean;
+    tabViewManager?: SRTabViewManager;
+}
+
+interface SROsrCore {
+    remainingDeckTree?: SRDeck;
+    reviewableDeckTree?: SRDeck;
+}
+
+interface SRDataManager {
+    sync?: () => Promise<void>;
+    syncLock?: unknown;
+    osrCore?: SROsrCore;
+    data?: { settings?: SRSettingsLike };
+}
+
+/** The SR plugin instance. dataManager/uiManager are getters that THROW until
+ * SR finishes its layout-ready initialization — access them inside try/catch. */
+interface SRPluginLike {
+    isInitialized?: unknown;
+    manifest?: { version?: string };
+    dataManager?: SRDataManager;
+    uiManager?: SRUIManager;
+}
 
 // Enum values verified against obsidian-spaced-repetition v1.15.4 (bundled main.js).
 export const ReviewResponse = {
@@ -39,6 +120,10 @@ function deckAllowed(deckPath: string, filter: DeckFilter): boolean {
     return filter.paths.some((p) => deckPath === p || deckPath.startsWith(p + "/"));
 }
 
+function asString(value: unknown, fallback: string): string {
+    return typeof value === "string" ? value : fallback;
+}
+
 export interface ReviewSession {
     /** Markdown of the question side (cloze deletions already masked by SR's parser). */
     front: string;
@@ -72,10 +157,11 @@ export interface ProbeResult {
 export class SRBridge {
     constructor(private app: App) {}
 
-    getSRPlugin(): any | null {
-        const plugins = (this.app as any).plugins;
-        if (!plugins?.enabledPlugins?.has?.(SR_PLUGIN_ID)) return null;
-        return plugins.plugins?.[SR_PLUGIN_ID] ?? null;
+    getSRPlugin(): SRPluginLike | null {
+        const appPlugins = (this.app as AppWithPlugins).plugins;
+        if (!appPlugins?.enabledPlugins?.has(SR_PLUGIN_ID)) return null;
+        const instance = appPlugins.plugins?.[SR_PLUGIN_ID];
+        return instance ? (instance) : null;
     }
 
     /**
@@ -88,10 +174,10 @@ export class SRBridge {
         if (!sr) return { status: "missing", reason: "Spaced Repetition plugin is not enabled" };
         if (typeof sr.isInitialized !== "boolean")
             return { status: "incompatible", reason: "isInitialized flag not found" };
-        if (sr.isInitialized !== true)
+        if (!sr.isInitialized)
             return { status: "notReady", reason: "Spaced Repetition is still initializing" };
-        let dm: any = null;
-        let ui: any = null;
+        let dm: SRDataManager | undefined;
+        let ui: SRUIManager | undefined;
         try {
             dm = sr.dataManager;
             ui = sr.uiManager;
@@ -119,27 +205,61 @@ export class SRBridge {
     }
 
     /**
+     * All deck paths currently known to SR (from its reviewable deck tree),
+     * in tree order, e.g. ["flashcards", "flashcards/韓国語", ...].
+     * Empty when SR is not ready — callers should fall back to manual input.
+     */
+    listDeckPaths(): string[] {
+        const result: string[] = [];
+        const walk = (deck: SRDeck, prefix: string): void => {
+            const subdecks = deck.subdecks;
+            if (!Array.isArray(subdecks)) return;
+            for (const entry of subdecks as unknown[]) {
+                const sub = entry as SRDeck;
+                if (typeof sub?.deckName !== "string") continue;
+                const path = prefix.length > 0 ? `${prefix}/${sub.deckName}` : sub.deckName;
+                result.push(path);
+                walk(sub, path);
+            }
+        };
+        try {
+            const root = this.getSRPlugin()?.dataManager?.osrCore?.reviewableDeckTree;
+            if (root) walk(root, "");
+        } catch {
+            /* SR not initialized — return what we have */
+        }
+        return result;
+    }
+
+    /**
      * Capture method: temporarily stub the UI-opening and focus-stealing methods of
      * SR's UIManager, run its own openDeckContainer() pipeline (which syncs the
      * vault and builds a ReviewQueueLoader), and grab the loader it would have handed
      * to the review modal. No UI is shown, no focus is taken, and every stub is
      * restored in `finally`. The loader then builds a real FlashcardReviewSequencer.
      */
-    private async acquireSequencer(sr: any): Promise<any | null> {
-        if (sr.dataManager.syncLock) return null;
+    private async acquireSequencer(sr: SRPluginLike): Promise<SRSequencer | null> {
+        const dm = sr.dataManager;
         const ui = sr.uiManager;
+        if (!dm || dm.syncLock === true) return null;
+        if (!ui || typeof ui.openDeckContainer !== "function") return null;
         const tvm = ui.tabViewManager;
-        let loader: any = null;
+        // Holder object: TypeScript's control-flow analysis cannot see the
+        // assignments made inside the stub closures below.
+        const capture: { loader: SRReviewQueueLoader | null } = { loader: null };
         const origModal = ui.openFlashcardModal;
         const origFocus = ui.focusObsidianWindow;
         const origTab = tvm?.openSRTabView;
-        ui.focusObsidianWindow = () => {};
-        ui.openFlashcardModal = (l: any) => {
-            loader = l;
+        ui.focusObsidianWindow = () => {
+            /* suppressed while capturing */
+        };
+        ui.openFlashcardModal = (l: SRReviewQueueLoader) => {
+            capture.loader = l;
         };
         if (tvm) {
-            tvm.openSRTabView = async (l: any) => {
-                loader = l;
+            tvm.openSRTabView = (l: SRReviewQueueLoader) => {
+                capture.loader = l;
+                return Promise.resolve();
             };
         }
         try {
@@ -149,43 +269,9 @@ export class SRBridge {
             ui.focusObsidianWindow = origFocus;
             if (tvm) tvm.openSRTabView = origTab;
         }
+        const loader = capture.loader;
         if (!loader || typeof loader.loadReviewQueue !== "function") return null;
         return await loader.loadReviewQueue();
-    }
-
-    /**
-     * All deck paths currently known to SR (from its reviewable deck tree),
-     * in tree order, e.g. ["flashcards", "flashcards/韓国語", ...].
-     * Empty when SR is not ready — callers should fall back to manual input.
-     */
-    listDeckPaths(): string[] {
-        const result: string[] = [];
-        try {
-            const root = this.getSRPlugin()?.dataManager?.osrCore?.reviewableDeckTree;
-            const walk = (deck: any, prefix: string): void => {
-                for (const sub of deck?.subdecks ?? []) {
-                    if (typeof sub?.deckName !== "string") continue;
-                    const path = prefix.length > 0 ? `${prefix}/${sub.deckName}` : sub.deckName;
-                    result.push(path);
-                    walk(sub, path);
-                }
-            };
-            if (root) walk(root, "");
-        } catch {
-            /* SR not initialized — return what we have */
-        }
-        return result;
-    }
-
-    /** Full deck path of the current card, e.g. "flashcards/韓国語" ("" if unknown). */
-    private currentDeckPath(sequencer: any): string {
-        try {
-            const topicPath = sequencer.currentDeck?.getTopicPath?.();
-            if (Array.isArray(topicPath?.path)) return topicPath.path.join("/");
-        } catch {
-            /* fall through */
-        }
-        return "";
     }
 
     /**
@@ -196,7 +282,7 @@ export class SRBridge {
     async openSession(dueCardsOnly: boolean, filter: DeckFilter): Promise<ReviewSession | null> {
         const sr = this.getSRPlugin();
         if (!sr) return null;
-        let sequencer: any = null;
+        let sequencer: SRSequencer | null = null;
         try {
             sequencer = await this.acquireSequencer(sr);
         } catch (e) {
@@ -204,7 +290,8 @@ export class SRBridge {
             return null;
         }
         if (!sequencer || sequencer.hasCurrentCard !== true) return null;
-        if (typeof sequencer.processReview !== "function") return null;
+        const processReview = sequencer.processReview;
+        if (typeof processReview !== "function") return null;
 
         // Walk the queue to the first card that passes the deck filter (and, with
         // dueCardsOnly, has a schedule). skipCurrentCard() only mutates the in-memory
@@ -220,15 +307,17 @@ export class SRBridge {
         }
         if (sequencer.hasCurrentCard !== true) return null;
         const card = sequencer.currentCard;
-        if (typeof card?.front !== "string" || typeof card?.back !== "string") return null;
+        if (!card || typeof card.front !== "string" || typeof card.back !== "string") return null;
         const isNewCard = card.hasSchedule !== true;
 
         let dueCount = 0;
         let newCount = 0;
         try {
             const tree = sr.dataManager?.osrCore?.remainingDeckTree;
-            dueCount = tree?.getDistinctRepItemCount?.(REP_ITEM_TYPE_DUE, true) ?? 0;
-            newCount = tree?.getDistinctRepItemCount?.(REP_ITEM_TYPE_NEW, true) ?? 0;
+            if (typeof tree?.getDistinctRepItemCount === "function") {
+                dueCount = tree.getDistinctRepItemCount(REP_ITEM_TYPE_DUE, true);
+                newCount = tree.getDistinctRepItemCount(REP_ITEM_TYPE_NEW, true);
+            }
         } catch {
             /* counts are cosmetic only */
         }
@@ -236,14 +325,20 @@ export class SRBridge {
         const deckPath = this.currentDeckPath(sequencer);
         const deckName: string | null = deckPath.length > 0 ? deckPath : null;
 
-        const srSettings = sr.dataManager?.data?.settings;
+        let srSettings: SRSettingsLike | undefined;
+        try {
+            srSettings = sr.dataManager?.data?.settings;
+        } catch {
+            /* labels fall back to defaults */
+        }
         const buttonLabels = {
-            again: srSettings?.flashcardAgainText ?? "Again",
-            hard: srSettings?.flashcardHardText ?? "Hard",
-            good: srSettings?.flashcardGoodText ?? "Good",
-            easy: srSettings?.flashcardEasyText ?? "Easy",
+            again: asString(srSettings?.flashcardAgainText, "Again"),
+            hard: asString(srSettings?.flashcardHardText, "Hard"),
+            good: asString(srSettings?.flashcardGoodText, "Good"),
+            easy: asString(srSettings?.flashcardEasyText, "Easy"),
         };
 
+        const boundSequencer = sequencer;
         return {
             front: card.front.trimStart(),
             back: card.back,
@@ -253,8 +348,24 @@ export class SRBridge {
             isNewCard,
             buttonLabels,
             rate: async (response: ReviewResponseValue) => {
-                await sequencer.processReview(response);
+                await processReview.call(boundSequencer, response);
             },
         };
+    }
+
+    /** Full deck path of the current card, e.g. "flashcards/韓国語" ("" if unknown). */
+    private currentDeckPath(sequencer: SRSequencer): string {
+        try {
+            const deck = sequencer.currentDeck;
+            const topicPath =
+                typeof deck?.getTopicPath === "function" ? deck.getTopicPath() : undefined;
+            const path = topicPath?.path;
+            if (Array.isArray(path)) {
+                return (path as unknown[]).map((p) => String(p)).join("/");
+            }
+        } catch {
+            /* fall through */
+        }
+        return "";
     }
 }

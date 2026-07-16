@@ -63,18 +63,20 @@ export default class SRPopupPlugin extends Plugin {
     }
 
     async loadSettings(): Promise<void> {
-        const data = await this.loadData();
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+        const raw: unknown = await this.loadData();
+        const data: Record<string, unknown> =
+            raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, data as Partial<SRPopupSettings>);
         // Migrate the old "start == end means disabled" convention to the toggle.
         if (
-            data?.quietHoursEnabled === undefined &&
+            data.quietHoursEnabled === undefined &&
             this.settings.quietHoursStart === this.settings.quietHoursEnd
         ) {
             this.settings.quietHoursEnabled = false;
         }
         // The former "exclude" deck filter mode was dropped in favor of a simple
         // all / only-listed choice.
-        if ((data?.deckFilterMode as string) === "exclude") {
+        if (data.deckFilterMode === "exclude") {
             this.settings.deckFilterMode = "all";
         }
         setLocaleOverride(this.settings.language);

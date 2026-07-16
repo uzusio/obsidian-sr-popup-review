@@ -1,6 +1,6 @@
 import esbuild from "esbuild";
 import process from "process";
-import builtins from "builtin-modules";
+import { builtinModules } from "node:module";
 import fs from "fs";
 import path from "path";
 
@@ -30,7 +30,13 @@ const copyAssets = {
 const context = await esbuild.context({
     entryPoints: ["src/main.ts"],
     bundle: true,
-    external: ["obsidian", "electron", "@electron/remote", ...builtins],
+    external: [
+        "obsidian",
+        "electron",
+        "@electron/remote",
+        ...builtinModules,
+        ...builtinModules.map((m) => `node:${m}`),
+    ],
     format: "cjs",
     target: "es2022",
     logLevel: "info",

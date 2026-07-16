@@ -1,3 +1,5 @@
+import { getLanguage } from "obsidian";
+
 type Strings = Record<string, string>;
 
 const en: Strings = {
@@ -149,13 +151,12 @@ export function setLocaleOverride(lang: string): void {
 }
 
 function currentTable(): Strings {
-    let locale: string;
+    let locale = "en";
     if (localeOverride !== "-") {
         locale = localeOverride;
     } else {
-        // Obsidian stores its UI language in localStorage; the key is absent for English.
         try {
-            locale = window.localStorage.getItem("language") ?? "en";
+            locale = typeof getLanguage === "function" ? getLanguage() : "en";
         } catch {
             locale = "en";
         }

@@ -157,8 +157,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
         addTimeInput(this.plugin.settings.quietHoursStart, (v) => {
             this.plugin.settings.quietHoursStart = v;
         });
-        const separator = quiet.controlEl.createSpan({ text: "〜" });
-        separator.style.margin = "0 4px";
+        quiet.controlEl.createSpan({ text: "〜", cls: "sr-popup-quiet-separator" });
         addTimeInput(this.plugin.settings.quietHoursEnd, (v) => {
             this.plugin.settings.quietHoursEnd = v;
         });
