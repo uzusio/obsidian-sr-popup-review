@@ -59,6 +59,7 @@ To pause automatic popups, click the **bell icon in the status bar** (bottom rig
 | Do not disturb | on, 01:00–09:00 | Toggle plus a time range with no popups; supports ranges across midnight |
 | Auto-close (seconds) | 90 | Closes an untouched popup (nothing is written); 0 disables |
 | Due cards only | on | Only show cards that are actually due; turn off to also get new cards |
+| Randomize deck order | on | Pick each popup card from a random deck (weighted by due count) so every due card has a roughly equal chance; off follows Spaced Repetition's sequential deck order |
 | Deck filter | All decks | *All decks* or *Only listed decks* |
 | Deck list | — | Dual-list picker: move decks between *available* and *target* with the add/remove buttons (double-click works too); a target deck also covers its subdecks. Empty target list = all decks |
 | Show deck name | on | Shows the deck path and due count in the popup header |

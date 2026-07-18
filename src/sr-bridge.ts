@@ -46,6 +46,8 @@ interface SRSequencer {
     currentDeck?: SRDeck | null;
     processReview?: (response: number) => Promise<void>;
     skipCurrentCard?: () => void;
+    /** Same API the SR modal uses when the user picks a deck from the deck list. */
+    setCurrentDeck?: (topicPath: SRTopicPath) => void;
 }
 
 interface SRReviewQueueLoader {
@@ -279,7 +281,11 @@ export class SRBridge {
      * (no cards, SR busy, internals incompatible, or no card passes the deck filter /
      * dueCardsOnly conditions).
      */
-    async openSession(dueCardsOnly: boolean, filter: DeckFilter): Promise<ReviewSession | null> {
+    async openSession(
+        dueCardsOnly: boolean,
+        filter: DeckFilter,
+        randomizeDeckOrder: boolean,
+    ): Promise<ReviewSession | null> {
         const sr = this.getSRPlugin();
         if (!sr) return null;
         let sequencer: SRSequencer | null = null;
@@ -292,6 +298,27 @@ export class SRBridge {
         if (!sequencer || sequencer.hasCurrentCard !== true) return null;
         const processReview = sequencer.processReview;
         if (typeof processReview !== "function") return null;
+
+        // SR's own deck order is sequential: the first deck in the tree supplies
+        // every card until its due pile is empty, which starves later decks when
+        // only one card is sampled per popup. Optionally re-position the sequencer
+        // onto a deck chosen at random, weighted by due-card count, so every due
+        // card in the vault has (approximately) equal probability.
+        if (randomizeDeckOrder && typeof sequencer.setCurrentDeck === "function") {
+            const chosen = this.pickRandomDeck(sr, dueCardsOnly, filter);
+            const topicPath =
+                typeof chosen?.getTopicPath === "function" ? chosen.getTopicPath() : undefined;
+            if (topicPath) {
+                try {
+                    sequencer.setCurrentDeck(topicPath);
+                } catch (e) {
+                    console.error(
+                        "[sr-popup-review] failed to select a random deck; falling back to SR's deck order",
+                        e,
+                    );
+                }
+            }
+        }
 
         // Walk the queue to the first card that passes the deck filter (and, with
         // dueCardsOnly, has a schedule). skipCurrentCard() only mutates the in-memory
@@ -351,6 +378,48 @@ export class SRBridge {
                 await processReview.call(boundSequencer, response);
             },
         };
+    }
+
+    /**
+     * Picks a deck at random from those holding cards that pass the deck filter,
+     * weighted by the number of eligible cards each deck itself holds (subdecks
+     * are their own candidates). Returns null when nothing is eligible.
+     */
+    private pickRandomDeck(
+        sr: SRPluginLike,
+        dueCardsOnly: boolean,
+        filter: DeckFilter,
+    ): SRDeck | null {
+        const candidates: { deck: SRDeck; weight: number }[] = [];
+        const collect = (deck: SRDeck, path: string): void => {
+            if (typeof deck.getDistinctRepItemCount === "function" && deckAllowed(path, filter)) {
+                let weight = deck.getDistinctRepItemCount(REP_ITEM_TYPE_DUE, false);
+                if (!dueCardsOnly) {
+                    weight += deck.getDistinctRepItemCount(REP_ITEM_TYPE_NEW, false);
+                }
+                if (weight > 0) candidates.push({ deck, weight });
+            }
+            const subdecks = deck.subdecks;
+            if (!Array.isArray(subdecks)) return;
+            for (const entry of subdecks as unknown[]) {
+                const sub = entry as SRDeck;
+                if (typeof sub?.deckName !== "string") continue;
+                collect(sub, path.length > 0 ? `${path}/${sub.deckName}` : sub.deckName);
+            }
+        };
+        try {
+            const root = sr.dataManager?.osrCore?.remainingDeckTree;
+            if (root) collect(root, "");
+        } catch {
+            return null;
+        }
+        if (candidates.length === 0) return null;
+        let r = Math.random() * candidates.reduce((sum, c) => sum + c.weight, 0);
+        for (const candidate of candidates) {
+            r -= candidate.weight;
+            if (r < 0) return candidate.deck;
+        }
+        return candidates[candidates.length - 1].deck;
     }
 
     /** Full deck path of the current card, e.g. "flashcards/韓国語" ("" if unknown). */

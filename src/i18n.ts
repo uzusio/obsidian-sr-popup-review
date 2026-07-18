@@ -66,6 +66,9 @@ const en: Strings = {
     deckNotFound: "not found in the current decks",
     settingsDueOnly: "Due cards only",
     settingsDueOnlyDesc: "Only show popups for cards that are actually due. Turn off to also get popups for new cards.",
+    settingsRandomDeck: "Randomize deck order",
+    settingsRandomDeckDesc:
+        "Pick each popup card from a random deck (weighted by its due-card count), so every due card has a roughly equal chance. Turn off to follow Spaced Repetition's deck order, which drains the first deck in the tree before later ones.",
     settingsShowDeckName: "Show deck name",
     settingsShowDeckNameDesc: "Show the deck name and due count in the popup header.",
     settingsCheckOnStartup: "Check shortly after startup",
@@ -136,6 +139,9 @@ const ja: Strings = {
     deckNotFound: "現在のデッキに存在しません",
     settingsDueOnly: "期限カードのみ",
     settingsDueOnlyDesc: "期限が来ているカードだけポップアップに出します。オフにすると新規カードでも出ます。",
+    settingsRandomDeck: "デッキ順を無視してランダムに出題",
+    settingsRandomDeckDesc:
+        "毎回のポップアップを、期限枚数で重み付けしたランダムなデッキから選びます（全期限カードがほぼ等確率になります）。オフにすると Spaced Repetition 本来のデッキ順（ツリーの前のデッキから消化）に従います。",
     settingsShowDeckName: "デッキ名を表示",
     settingsShowDeckNameDesc: "ポップアップのヘッダにデッキ名と期限枚数を表示します。",
     settingsCheckOnStartup: "起動直後にチェック",

@@ -123,10 +123,11 @@ export class Scheduler {
             return;
         }
 
-        const session = await this.plugin.bridge.openSession(s.dueCardsOnly, {
-            mode: s.deckFilterMode,
-            paths: s.deckFilterList,
-        });
+        const session = await this.plugin.bridge.openSession(
+            s.dueCardsOnly,
+            { mode: s.deckFilterMode, paths: s.deckFilterList },
+            s.randomizeDeckOrder,
+        );
         if (!session) {
             log("no card matches (nothing due, or filtered out by the deck filter)");
             if (mode !== "manual") this.nothingDueUntil = Date.now() + NOTHING_DUE_BACKOFF_MS;

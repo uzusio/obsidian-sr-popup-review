@@ -15,6 +15,7 @@ export interface SRPopupSettings {
     quietHoursEnd: string;
     autoCloseSeconds: number;
     dueCardsOnly: boolean;
+    randomizeDeckOrder: boolean;
     deckFilterMode: "all" | "include";
     deckFilterList: string[];
     showDeckName: boolean;
@@ -32,6 +33,7 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
     quietHoursEnd: "09:00",
     autoCloseSeconds: 90,
     dueCardsOnly: true,
+    randomizeDeckOrder: true,
     deckFilterMode: "all",
     deckFilterList: [],
     showDeckName: true,
@@ -202,6 +204,16 @@ export class SRPopupSettingTab extends PluginSettingTab {
             .addToggle((toggle) =>
                 toggle.setValue(this.plugin.settings.dueCardsOnly).onChange(async (v) => {
                     this.plugin.settings.dueCardsOnly = v;
+                    await this.plugin.saveSettings();
+                }),
+            );
+
+        new Setting(containerEl)
+            .setName(t("settingsRandomDeck"))
+            .setDesc(t("settingsRandomDeckDesc"))
+            .addToggle((toggle) =>
+                toggle.setValue(this.plugin.settings.randomizeDeckOrder).onChange(async (v) => {
+                    this.plugin.settings.randomizeDeckOrder = v;
                     await this.plugin.saveSettings();
                 }),
             );
