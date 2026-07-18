@@ -6,7 +6,7 @@ Review your [Spaced Repetition](https://github.com/st3v3nmw/obsidian-spaced-repe
 
 Ratings are written through the Spaced Repetition plugin's **own review pipeline** (the same code path as its review modal), so your scheduling data stays fully consistent — no re-implementation of SM-2 or FSRS.
 
-> ⚠ **Beta.** Not yet listed in the community plugin browser. Tested with Spaced Repetition **v1.15.4**.
+Tested with Spaced Repetition **v1.15.4**.
 
 ## How it works
 
@@ -22,11 +22,11 @@ Ratings are written through the Spaced Repetition plugin's **own review pipeline
 
 ## Installation
 
-### Via BRAT (recommended while in beta)
+### From the community plugin browser (recommended)
 
-1. Install the [BRAT](https://github.com/TfTHacker/obsidian42-brat) community plugin.
-2. In BRAT settings, choose **Add beta plugin** and enter `uzusio/obsidian-sr-popup-review`.
-3. Enable **Popup Review for Spaced Repetition** in *Settings → Community plugins*.
+1. Open *Settings → Community plugins → Browse*.
+2. Search for **Popup Review** and install **Popup Review for Spaced Repetition**.
+3. Enable it in *Settings → Community plugins*.
 
 ### Manual
 

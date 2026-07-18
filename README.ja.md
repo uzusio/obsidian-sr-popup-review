@@ -6,7 +6,7 @@ Obsidianを開かなくても [Spaced Repetition](https://github.com/st3v3nmw/ob
 
 評価は Spaced Repetition プラグイン**自身のレビュー処理**（レビューモーダルのボタンと同じコードパス）を通して書き込まれるため、スケジュールデータの整合性は本家と完全に同一です。SM-2 / FSRS の再実装はしていません。
 
-> ⚠ **ベータ版。** コミュニティプラグイン一覧にはまだ登録されていません。Spaced Repetition **v1.15.4** で動作確認しています。
+Spaced Repetition **v1.15.4** で動作確認しています。
 
 ## 動作の流れ
 
@@ -22,11 +22,11 @@ Obsidianを開かなくても [Spaced Repetition](https://github.com/st3v3nmw/ob
 
 ## インストール
 
-### BRAT経由（ベータ期間中のおすすめ）
+### コミュニティプラグインブラウザから（推奨）
 
-1. コミュニティプラグイン [BRAT](https://github.com/TfTHacker/obsidian42-brat) をインストール
-2. BRATの設定で **Add beta plugin** → `uzusio/obsidian-sr-popup-review` を入力
-3. 設定 → コミュニティプラグイン で **Popup Review for Spaced Repetition** を有効化
+1. 設定 → コミュニティプラグイン → 閲覧 を開く
+2. 「**Popup Review**」で検索して **Popup Review for Spaced Repetition** をインストール
+3. 設定 → コミュニティプラグイン で有効化
 
 ### 手動
 
