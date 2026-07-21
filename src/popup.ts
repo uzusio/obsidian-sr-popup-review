@@ -116,7 +116,13 @@ export class PopupController {
     ) {}
 
     get isOpen(): boolean {
-        return this.win !== null && this.win.isDestroyed?.() !== true;
+        try {
+            return this.win !== null && this.win.isDestroyed?.() !== true;
+        } catch {
+            // A destroyed remote BrowserWindow throws "Object has been destroyed"
+            // on ANY member access — treat that as closed.
+            return false;
+        }
     }
 
     async show(
@@ -196,13 +202,34 @@ export class PopupController {
         } catch {
             /* cosmetic */
         }
-        this.heartbeatTimer = window.setInterval(() => {
-            this.execInPopup("window.__heartbeat && window.__heartbeat()").catch(() => {
-                /* window gone; the event loop handles cleanup */
-            });
-        }, HEARTBEAT_SEND_MS);
+        if (this.heartbeatTimer !== null) {
+            // Defensive: never leak a previous session's interval.
+            window.clearInterval(this.heartbeatTimer);
+        }
+        this.heartbeatTimer = window.setInterval(() => this.heartbeatTick(gen), HEARTBEAT_SEND_MS);
         void this.eventLoop(gen);
         return true;
+    }
+
+    /**
+     * Heartbeat + reaper. Besides feeding the popup's self-destruct timer, this
+     * detects a window that died without the event loop noticing (on some
+     * Electron versions a pending executeJavaScript promise never settles when
+     * the window closes itself) and buries the session. Without this, the dead
+     * window blocked every future popup and its leaked timer threw
+     * "Object has been destroyed" on every beat — observed in the wild as
+     * hundreds of accumulated console errors.
+     */
+    private heartbeatTick(gen: number): void {
+        if (gen !== this.generation) return;
+        if (!this.isOpen) {
+            console.warn("[sr-popup-review] popup window vanished; cleaning up its session");
+            this.finish();
+            return;
+        }
+        this.execInPopup("window.__heartbeat && window.__heartbeat()").catch(() => {
+            /* transient; the reaper or event loop will clean up */
+        });
     }
 
     close(): void {
@@ -237,13 +264,19 @@ export class PopupController {
         return false;
     }
 
-    /** Runs a script in the popup window; rejects if the window is unavailable. */
+    /** Runs a script in the popup window; rejects if the window is unavailable.
+     * Never throws synchronously: member access on a destroyed remote window
+     * throws "Object has been destroyed", which must not escape into timers. */
     private execInPopup(code: string): Promise<unknown> {
-        const webContents = this.win?.webContents;
-        if (!webContents || typeof webContents.executeJavaScript !== "function") {
-            return Promise.reject(new Error("popup webContents unavailable"));
+        try {
+            const webContents = this.win?.webContents;
+            if (!webContents || typeof webContents.executeJavaScript !== "function") {
+                return Promise.reject(new Error("popup webContents unavailable"));
+            }
+            return webContents.executeJavaScript(code, true);
+        } catch (e) {
+            return Promise.reject(e instanceof Error ? e : new Error(String(e)));
         }
-        return webContents.executeJavaScript(code, true);
     }
 
     /**
