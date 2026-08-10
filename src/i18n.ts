@@ -69,6 +69,9 @@ const en: Strings = {
     settingsRandomDeck: "Randomize deck order",
     settingsRandomDeckDesc:
         "Pick each popup card from a random deck (weighted by its due-card count), so every due card has a roughly equal chance. Turn off to follow Spaced Repetition's deck order, which drains the first deck in the tree before later ones.",
+    settingsFullscreen: "Skip popups during fullscreen apps",
+    settingsFullscreenDesc:
+        "When Windows reports a fullscreen app or presentation in the foreground (games, slideshows, F11 fullscreen), the popup is postponed and appears within a minute after fullscreen ends. Windows only; the manual show-popup-now command is not affected.",
     settingsShowDeckName: "Show deck name",
     settingsShowDeckNameDesc: "Show the deck name and due count in the popup header.",
     settingsCheckOnStartup: "Check shortly after startup",
@@ -142,6 +145,9 @@ const ja: Strings = {
     settingsRandomDeck: "デッキ順を無視してランダムに出題",
     settingsRandomDeckDesc:
         "毎回のポップアップを、期限枚数で重み付けしたランダムなデッキから選びます（全期限カードがほぼ等確率になります）。オフにすると Spaced Repetition 本来のデッキ順（ツリーの前のデッキから消化）に従います。",
+    settingsFullscreen: "フルスクリーンアプリ中はポップアップを出さない",
+    settingsFullscreenDesc:
+        "ゲーム・スライドショー・F11全画面などのフルスクリーン状態をWindowsに問い合わせて検出し、その間はポップアップを見送ります（フルスクリーン終了後1分以内に出ます）。Windows専用。手動の「今すぐ表示」コマンドには影響しません。",
     settingsShowDeckName: "デッキ名を表示",
     settingsShowDeckNameDesc: "ポップアップのヘッダにデッキ名と期限枚数を表示します。",
     settingsCheckOnStartup: "起動直後にチェック",

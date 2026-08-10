@@ -60,6 +60,7 @@ To pause automatic popups, click the **bell icon in the status bar** (bottom rig
 | Auto-close (seconds) | 90 | Closes an untouched popup (nothing is written); 0 disables |
 | Due cards only | on | Only show cards that are actually due; turn off to also get new cards |
 | Randomize deck order | on | Pick each popup card from a random deck (weighted by due count) so every due card has a roughly equal chance; off follows Spaced Repetition's sequential deck order |
+| Skip popups during fullscreen apps | on | Postpones popups while Windows reports a fullscreen app or presentation (games, slideshows, F11); the card appears within a minute after fullscreen ends. Windows only |
 | Deck filter | All decks | *All decks* or *Only listed decks* |
 | Deck list | — | Dual-list picker: move decks between *available* and *target* with the add/remove buttons (double-click works too); a target deck also covers its subdecks. Empty target list = all decks |
 | Show deck name | on | Shows the deck path and due count in the popup header |
@@ -76,7 +77,7 @@ The settings tab also shows whether the Spaced Repetition integration is working
 ## Known limitations
 
 - Popups appear only while Obsidian is running (minimized is fine).
-- The popup is a custom always-on-top window, not an OS notification: it does not appear in the notification center and ignores Do Not Disturb / Focus Assist.
+- The popup is a custom always-on-top window, not an OS notification: it does not appear in the notification center and ignores Focus Assist itself. Fullscreen apps and presentations are detected separately and skipped (see settings).
 - Position is fixed to the bottom-right of the primary display for now.
 
 ## Development

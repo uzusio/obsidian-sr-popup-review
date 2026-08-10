@@ -1,5 +1,6 @@
 import { Notice } from "obsidian";
 import type SRPopupPlugin from "./main";
+import { isFullscreenAppActive } from "./fullscreen";
 import { t } from "./i18n";
 
 const TICK_MS = 60_000;
@@ -100,6 +101,12 @@ export class Scheduler {
             isInQuietHours(new Date(), s.quietHoursStart, s.quietHoursEnd)
         ) {
             log("inside do-not-disturb hours");
+            return;
+        }
+        if (mode !== "manual" && s.pauseDuringFullscreen && (await isFullscreenAppActive())) {
+            // Postponed, not consumed: the next tick re-checks, so the popup
+            // appears within a minute after fullscreen ends.
+            log("a fullscreen app is active");
             return;
         }
         const probe = this.plugin.bridge.probe();

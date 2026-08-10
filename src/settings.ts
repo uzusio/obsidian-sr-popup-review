@@ -16,6 +16,8 @@ export interface SRPopupSettings {
     autoCloseSeconds: number;
     dueCardsOnly: boolean;
     randomizeDeckOrder: boolean;
+    /** Skip (postpone) popups while a fullscreen app / presentation is active (Windows only). */
+    pauseDuringFullscreen: boolean;
     deckFilterMode: "all" | "include";
     deckFilterList: string[];
     showDeckName: boolean;
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
     autoCloseSeconds: 90,
     dueCardsOnly: true,
     randomizeDeckOrder: true,
+    pauseDuringFullscreen: true,
     deckFilterMode: "all",
     deckFilterList: [],
     showDeckName: true,
@@ -216,6 +219,18 @@ export class SRPopupSettingTab extends PluginSettingTab {
                     this.plugin.settings.randomizeDeckOrder = v;
                     await this.plugin.saveSettings();
                 }),
+            );
+
+        new Setting(containerEl)
+            .setName(t("settingsFullscreen"))
+            .setDesc(t("settingsFullscreenDesc"))
+            .addToggle((toggle) =>
+                toggle
+                    .setValue(this.plugin.settings.pauseDuringFullscreen)
+                    .onChange(async (v) => {
+                        this.plugin.settings.pauseDuringFullscreen = v;
+                        await this.plugin.saveSettings();
+                    }),
             );
 
         new Setting(containerEl)
