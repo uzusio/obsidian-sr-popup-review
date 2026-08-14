@@ -113,6 +113,8 @@ export class PopupController {
     constructor(
         private app: App,
         private owner: Component,
+        /** Persistent diagnostics logger (also mirrors to the console). */
+        private diag: (message: string) => void,
     ) {}
 
     get isOpen(): boolean {
@@ -182,7 +184,7 @@ export class PopupController {
         ]);
         if (gen !== this.generation) return false;
         if (!loaded || !this.isOpen) {
-            console.error("[sr-popup-review] popup content did not load in time");
+            this.diag("ERROR: popup content did not load in time");
             this.finish();
             return false;
         }
@@ -208,6 +210,9 @@ export class PopupController {
         }
         this.heartbeatTimer = window.setInterval(() => this.heartbeatTick(gen), HEARTBEAT_SEND_MS);
         void this.eventLoop(gen);
+        this.diag(
+            `popup shown (deck: ${session.deckName ?? "-"}, due: ${session.dueCount}, new card: ${session.isNewCard})`,
+        );
         return true;
     }
 
@@ -223,7 +228,7 @@ export class PopupController {
     private heartbeatTick(gen: number): void {
         if (gen !== this.generation) return;
         if (!this.isOpen) {
-            console.warn("[sr-popup-review] popup window vanished; cleaning up its session");
+            this.diag("popup window vanished; cleaning up its session");
             this.finish();
             return;
         }
@@ -258,7 +263,7 @@ export class PopupController {
         }
         if (alive) return true;
         if (gen === this.generation && this.isOpen) {
-            console.warn("[sr-popup-review] popup window is unresponsive; destroying it");
+            this.diag("popup window is unresponsive; destroying it");
             this.finish();
         }
         return false;
@@ -302,11 +307,14 @@ export class PopupController {
                 if (remote) this.place(remote, HEIGHT_REVEALED);
                 continue;
             }
-            if (event === "close") break;
+            if (event === "close") {
+                this.diag("popup dismissed (nothing written)");
+                break;
+            }
             const response = ACTION_TO_RESPONSE[String(event)];
             const session = this.session;
             if (response === undefined || !session) break;
-            console.debug(`[sr-popup-review] rating received (${String(event)}); writing...`);
+            this.diag(`rating received (${String(event)}); writing...`);
             const started = Date.now();
             const ratePromise = session.rate(response).then(
                 () => "ok" as const,
@@ -322,19 +330,18 @@ export class PopupController {
                 ),
             ]);
             if (result === "error") {
+                this.diag("ERROR: review write failed (see console for the exception)");
                 new Notice(t("ratingFailed"));
                 break;
             }
             if (result === "timeout") {
-                console.error(
-                    `[sr-popup-review] review write did not settle within ${RATE_TIMEOUT_MS / 1000}s; closing the popup — check the card's schedule comment`,
+                this.diag(
+                    `ERROR: review write did not settle within ${RATE_TIMEOUT_MS / 1000}s; popup closed — check the card's schedule comment`,
                 );
                 new Notice(t("ratingTimeout"));
                 break;
             }
-            console.debug(
-                `[sr-popup-review] review (${String(event)}) written in ${Date.now() - started} ms`,
-            );
+            this.diag(`review (${String(event)}) written in ${Date.now() - started} ms`);
             if (gen !== this.generation) return;
             try {
                 await this.execInPopup("window.__showDone && window.__showDone()");

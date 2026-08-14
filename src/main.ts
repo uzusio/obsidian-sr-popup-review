@@ -1,5 +1,6 @@
 import { Notice, Plugin, setIcon } from "obsidian";
 import { SRBridge } from "./sr-bridge";
+import { DiagLog } from "./diaglog";
 import { PopupController } from "./popup";
 import { Scheduler } from "./scheduler";
 import { DEFAULT_SETTINGS, SRPopupSettings, SRPopupSettingTab } from "./settings";
@@ -8,6 +9,7 @@ import { setLocaleOverride, t } from "./i18n";
 export default class SRPopupPlugin extends Plugin {
     declare settings: SRPopupSettings;
     bridge!: SRBridge;
+    diag!: DiagLog;
     popup!: PopupController;
     scheduler!: Scheduler;
     private statusBarIconEl: HTMLElement | null = null;
@@ -15,7 +17,13 @@ export default class SRPopupPlugin extends Plugin {
     async onload(): Promise<void> {
         await this.loadSettings();
         this.bridge = new SRBridge(this.app);
-        this.popup = new PopupController(this.app, this);
+        this.diag = new DiagLog(
+            this.app,
+            `${this.manifest.dir ?? `${this.app.vault.configDir}/plugins/sr-popup-review`}/diagnostics.log`,
+        );
+        void this.diag.init();
+        this.diag.log(`plugin loaded (v${this.manifest.version})`);
+        this.popup = new PopupController(this.app, this, (message) => this.diag.log(message));
         this.scheduler = new Scheduler(this);
 
         this.addSettingTab(new SRPopupSettingTab(this.app, this));

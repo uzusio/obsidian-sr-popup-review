@@ -38,15 +38,24 @@ export class Scheduler {
         }
     }
 
+    /** When the last due-card check found nothing, no re-check happens before this time. */
+    getNothingDueUntil(): number {
+        return this.nothingDueUntil;
+    }
+
     async tick(mode: TickMode): Promise<void> {
         if (this.tickingSince !== null) {
-            if (Date.now() - this.tickingSince < TICK_WATCHDOG_MS) return;
+            if (Date.now() - this.tickingSince < TICK_WATCHDOG_MS) {
+                this.plugin.diag.log(
+                    `tick(${mode}): skipped — previous tick still running (${Math.round((Date.now() - this.tickingSince) / 1000)}s)`,
+                );
+                return;
+            }
             // A previous tick never returned (hung SR sync or popup creation).
             // Abandon its lock so popups can resume instead of staying silent
             // until the next Obsidian restart.
-            console.error(
-                "[sr-popup-review] a previous tick has been stuck for over " +
-                    `${TICK_WATCHDOG_MS / 60_000} minutes; abandoning its lock`,
+            this.plugin.diag.log(
+                `ERROR: a previous tick was stuck for over ${TICK_WATCHDOG_MS / 60_000} minutes; abandoning its lock`,
             );
         }
         const token = ++this.tickToken;
@@ -77,7 +86,7 @@ export class Scheduler {
     private async doTick(mode: TickMode): Promise<void> {
         const s = this.plugin.settings;
         const log = (message: string): void => {
-            console.debug(`[sr-popup-review] tick(${mode}): ${message}`);
+            this.plugin.diag.log(`tick(${mode}): ${message}`);
         };
         if (mode !== "manual" && s.paused) {
             log("paused by the user");
@@ -90,7 +99,10 @@ export class Scheduler {
             }
             log("cleaned up an unresponsive popup window");
         }
-        if (mode === "auto" && Date.now() - s.lastShownAt < s.intervalMinutes * 60_000) return;
+        if (mode === "auto" && Date.now() - s.lastShownAt < s.intervalMinutes * 60_000) {
+            log("interval not elapsed yet");
+            return;
+        }
         if (mode === "auto" && Date.now() < this.nothingDueUntil) {
             log("backing off after a recent nothing-due sync");
             return;
