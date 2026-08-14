@@ -87,6 +87,8 @@ export default class SRPopupPlugin extends Plugin {
         if (data.deckFilterMode === "exclude") {
             this.settings.deckFilterMode = "all";
         }
+        // "Due cards only" was replaced by the daily new-card budget (newCardsPerDay).
+        delete (this.settings as unknown as Record<string, unknown>).dueCardsOnly;
         setLocaleOverride(this.settings.language);
     }
 

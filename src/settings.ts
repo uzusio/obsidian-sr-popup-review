@@ -14,7 +14,11 @@ export interface SRPopupSettings {
     quietHoursStart: string;
     quietHoursEnd: string;
     autoCloseSeconds: number;
-    dueCardsOnly: boolean;
+    /** Daily budget of never-reviewed cards introduced when nothing is due (0 = due cards only). */
+    newCardsPerDay: number;
+    /** Persisted state: date ("YYYY-MM-DD") and count of new cards shown that day. */
+    newCardsShownDate: string;
+    newCardsShownCount: number;
     randomizeDeckOrder: boolean;
     /** Skip (postpone) popups while a fullscreen app / presentation is active (Windows only). */
     pauseDuringFullscreen: boolean;
@@ -34,7 +38,9 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
     quietHoursStart: "01:00",
     quietHoursEnd: "09:00",
     autoCloseSeconds: 90,
-    dueCardsOnly: true,
+    newCardsPerDay: 10,
+    newCardsShownDate: "",
+    newCardsShownCount: 0,
     randomizeDeckOrder: true,
     pauseDuringFullscreen: true,
     deckFilterMode: "all",
@@ -205,12 +211,15 @@ export class SRPopupSettingTab extends PluginSettingTab {
         }
 
         new Setting(containerEl)
-            .setName(t("settingsDueOnly"))
-            .setDesc(t("settingsDueOnlyDesc"))
-            .addToggle((toggle) =>
-                toggle.setValue(this.plugin.settings.dueCardsOnly).onChange(async (v) => {
-                    this.plugin.settings.dueCardsOnly = v;
-                    await this.plugin.saveSettings();
+            .setName(t("settingsNewPerDay"))
+            .setDesc(t("settingsNewPerDayDesc"))
+            .addText((text) =>
+                text.setValue(String(this.plugin.settings.newCardsPerDay)).onChange(async (v) => {
+                    const n = Number(v);
+                    if (Number.isFinite(n) && n >= 0) {
+                        this.plugin.settings.newCardsPerDay = Math.round(n);
+                        await this.plugin.saveSettings();
+                    }
                 }),
             );
 

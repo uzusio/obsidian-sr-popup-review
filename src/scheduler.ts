@@ -1,5 +1,6 @@
-import { Notice } from "obsidian";
+import { Notice, moment } from "obsidian";
 import type SRPopupPlugin from "./main";
+import type { DeckFilter } from "./sr-bridge";
 import { isFullscreenAppActive } from "./fullscreen";
 import { t } from "./i18n";
 
@@ -41,6 +42,15 @@ export class Scheduler {
     /** When the last due-card check found nothing, no re-check happens before this time. */
     getNothingDueUntil(): number {
         return this.nothingDueUntil;
+    }
+
+    private newCardsShownToday(): number {
+        const s = this.plugin.settings;
+        return s.newCardsShownDate === moment().format("YYYY-MM-DD") ? s.newCardsShownCount : 0;
+    }
+
+    private newCardBudgetLeft(): boolean {
+        return this.newCardsShownToday() < this.plugin.settings.newCardsPerDay;
     }
 
     async tick(mode: TickMode): Promise<void> {
@@ -142,18 +152,40 @@ export class Scheduler {
             return;
         }
 
-        const session = await this.plugin.bridge.openSession(
-            s.dueCardsOnly,
-            { mode: s.deckFilterMode, paths: s.deckFilterList },
-            s.randomizeDeckOrder,
-        );
+        const filter: DeckFilter = { mode: s.deckFilterMode, paths: s.deckFilterList };
+        // Due cards always take priority.
+        let session = await this.plugin.bridge.openSession(true, filter, s.randomizeDeckOrder);
+        let introducesNewCard = false;
         if (!session) {
-            log("no card matches (nothing due, or filtered out by the deck filter)");
+            if (this.newCardBudgetLeft()) {
+                // Nothing due: introduce a never-reviewed card within the daily
+                // budget, so new cards enter the review cycle without flooding it.
+                session = await this.plugin.bridge.openSession(false, filter, s.randomizeDeckOrder);
+                introducesNewCard = session?.isNewCard === true;
+                if (session) {
+                    log(
+                        `no due card; introducing a new card (${this.newCardsShownToday() + 1}/${s.newCardsPerDay} today)`,
+                    );
+                }
+            } else if (s.newCardsPerDay > 0) {
+                log(`no due card; daily new-card budget reached (${s.newCardsPerDay}/day)`);
+            }
+        }
+        if (!session) {
+            log("no card matches (nothing due, no new-card budget left, or filtered out)");
             if (mode !== "manual") this.nothingDueUntil = Date.now() + NOTHING_DUE_BACKOFF_MS;
             else new Notice(t("nothingDue"));
             return;
         }
         this.nothingDueUntil = 0;
+        if (introducesNewCard) {
+            const today = moment().format("YYYY-MM-DD");
+            if (s.newCardsShownDate !== today) {
+                s.newCardsShownDate = today;
+                s.newCardsShownCount = 0;
+            }
+            s.newCardsShownCount++;
+        }
         s.lastShownAt = Date.now();
         await this.plugin.saveSettings();
         const shown = await this.plugin.popup.show(session, s.autoCloseSeconds, s.showDeckName);

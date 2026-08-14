@@ -65,8 +65,9 @@ const en: Strings = {
     deckAdd: "Add →",
     deckRemove: "← Remove",
     deckNotFound: "not found in the current decks",
-    settingsDueOnly: "Due cards only",
-    settingsDueOnlyDesc: "Only show popups for cards that are actually due. Turn off to also get popups for new cards.",
+    settingsNewPerDay: "New cards per day",
+    settingsNewPerDayDesc:
+        "When nothing is due, introduce up to this many never-reviewed cards per day so they enter the review cycle. 0 restores the old due-cards-only behavior (new cards then never appear in popups).",
     settingsRandomDeck: "Randomize deck order",
     settingsRandomDeckDesc:
         "Pick each popup card from a random deck (weighted by its due-card count), so every due card has a roughly equal chance. Turn off to follow Spaced Repetition's deck order, which drains the first deck in the tree before later ones.",
@@ -142,8 +143,9 @@ const ja: Strings = {
     deckAdd: "追加 →",
     deckRemove: "← 除外",
     deckNotFound: "現在のデッキに存在しません",
-    settingsDueOnly: "期限カードのみ",
-    settingsDueOnlyDesc: "期限が来ているカードだけポップアップに出します。オフにすると新規カードでも出ます。",
+    settingsNewPerDay: "1日の新規カード導入枚数",
+    settingsNewPerDayDesc:
+        "期限カードがないとき、未レビューの新規カードを1日この枚数まで出して復習サイクルに乗せます。0にすると期限カードのみ（新規カードはポップアップに出ない旧挙動）になります。",
     settingsRandomDeck: "デッキ順を無視してランダムに出題",
     settingsRandomDeckDesc:
         "毎回のポップアップを、期限枚数で重み付けしたランダムなデッキから選びます（全期限カードがほぼ等確率になります）。オフにすると Spaced Repetition 本来のデッキ順（ツリーの前のデッキから消化）に従います。",
