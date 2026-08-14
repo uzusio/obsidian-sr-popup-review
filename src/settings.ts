@@ -28,6 +28,8 @@ export interface SRPopupSettings {
     checkOnStartup: boolean;
     /** Persisted state, not user-facing: epoch ms of the last popup. */
     lastShownAt: number;
+    /** Persisted state: no automatic popups before this time (snooze from the popup menu). */
+    snoozeUntil: number;
 }
 
 export const DEFAULT_SETTINGS: SRPopupSettings = {
@@ -48,6 +50,7 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
     showDeckName: true,
     checkOnStartup: false,
     lastShownAt: 0,
+    snoozeUntil: 0,
 };
 
 const HHMM_RE = /^(\d{1,2}):(\d{2})$/;
@@ -113,7 +116,9 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 ? t("popupOpenNow")
                 : s.paused
                   ? t("pausedNow")
-                  : backoffUntil > now.getTime()
+                  : s.snoozeUntil > now.getTime()
+                    ? t("snoozedNow", { time: fmt(s.snoozeUntil) })
+                    : backoffUntil > now.getTime()
                     ? t("nextPopupBackoff", { time: fmt(backoffUntil) })
                     : nextAt <= now.getTime()
                       ? t("nextPopupAsap")

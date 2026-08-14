@@ -115,6 +115,8 @@ export class PopupController {
         private owner: Component,
         /** Persistent diagnostics logger (also mirrors to the console). */
         private diag: (message: string) => void,
+        /** Handles the popup's options menu: pause, or snooze for N minutes. */
+        private onControl: (action: "pause" | "snooze", minutes?: number) => Promise<void>,
     ) {}
 
     get isOpen(): boolean {
@@ -311,6 +313,22 @@ export class PopupController {
                 this.diag("popup dismissed (nothing written)");
                 break;
             }
+            if (event === "pause" || (typeof event === "string" && event.startsWith("snooze:"))) {
+                const minutes = event === "pause" ? undefined : Number(event.slice(7));
+                this.diag(
+                    event === "pause"
+                        ? "popup menu: pause requested"
+                        : `popup menu: snooze ${minutes ?? "?"} min requested`,
+                );
+                try {
+                    await this.onControl(event === "pause" ? "pause" : "snooze", minutes);
+                } catch (e) {
+                    console.error("[sr-popup-review] failed to apply popup menu action", e);
+                }
+                // The popup shows its own confirmation and closes itself; the
+                // next __nextEvent() call rejects then and ends the loop.
+                continue;
+            }
             const response = ACTION_TO_RESPONSE[String(event)];
             const session = this.session;
             if (response === undefined || !session) break;
@@ -448,6 +466,17 @@ body {
     font-size: 14px; cursor: pointer; padding: 2px 6px;
 }
 .closebtn:hover { color: var(--fg); }
+.menu {
+    position: fixed; top: 32px; right: 8px; z-index: 10;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); min-width: 180px; overflow: hidden;
+}
+.menu button {
+    display: block; width: 100%; text-align: left; padding: 8px 12px;
+    background: none; border: none; color: var(--fg);
+    font-family: inherit; font-size: 13px; cursor: pointer;
+}
+.menu button:hover { background: var(--btn-bg); }
 .content { flex: 1; overflow-y: auto; padding: 2px 16px 10px; }
 .content img { max-width: 100%; }
 .content hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
@@ -478,7 +507,16 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
 <body class="${dark ? "dark" : ""}">
 <div class="header">
     <span>${headerParts.join(" · ")}</span>
-    <button class="closebtn" id="closeBtn" title="Esc">✕</button>
+    <span>
+        <button class="closebtn" id="menuBtn" title="${escapeHtml(t("menuTooltip"))}">⋯</button>
+        <button class="closebtn" id="closeBtn" title="Esc">✕</button>
+    </span>
+</div>
+<div id="menu" class="menu" hidden>
+    <button data-action="pause">${escapeHtml(t("menuPause"))}</button>
+    <button data-action="snooze:30">${escapeHtml(t("menuSnooze30"))}</button>
+    <button data-action="snooze:60">${escapeHtml(t("menuSnooze60"))}</button>
+    <button data-action="snooze:180">${escapeHtml(t("menuSnooze180"))}</button>
 </div>
 <div class="content">
     <div class="q">${frontHtml}</div>
@@ -570,6 +608,30 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
 
     revealBtn.addEventListener("click", reveal);
     document.getElementById("closeBtn").addEventListener("click", requestClose);
+
+    // Options menu (pause / snooze). The confirmation overlay and self-close
+    // live here so they work even if the plugin side is throttled.
+    var menu = document.getElementById("menu");
+    var menuBtn = document.getElementById("menuBtn");
+    menuBtn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        menu.hidden = !menu.hidden;
+    });
+    document.addEventListener("click", function (e) {
+        if (!menu.hidden && !menu.contains(e.target) && e.target !== menuBtn) menu.hidden = true;
+    });
+    Array.prototype.forEach.call(menu.querySelectorAll("button"), function (b) {
+        b.addEventListener("click", function () {
+            if (chosen) return;
+            menu.hidden = true;
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            var done = document.getElementById("done");
+            done.textContent = "⏸ " + b.textContent;
+            done.hidden = false;
+            emit(b.getAttribute("data-action"));
+            setTimeout(function () { window.close(); }, 700);
+        });
+    });
     Array.prototype.forEach.call(ratings.querySelectorAll(".action"), function (b) {
         byAction[b.getAttribute("data-action")] = b;
         b.addEventListener("click", function () { choose(b.getAttribute("data-action")); });

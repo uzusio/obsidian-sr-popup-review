@@ -8,6 +8,13 @@ const en: Strings = {
     newCard: "New card",
     saved: "Saved",
     saving: "Saving…",
+    menuTooltip: "Options",
+    menuPause: "Pause until resumed",
+    menuSnooze30: "Snooze 30 minutes",
+    menuSnooze60: "Snooze 1 hour",
+    menuSnooze180: "Snooze 3 hours",
+    snoozedNotice: "Popup Review for Spaced Repetition: popups snoozed until {time}.",
+    snoozedNow: "snoozed until {time}",
     ratingFailed:
         "Popup Review for Spaced Repetition: failed to save the review. See the developer console for details.",
     ratingTimeout:
@@ -87,6 +94,13 @@ const ja: Strings = {
     newCard: "新規カード",
     saved: "記録しました",
     saving: "保存中…",
+    menuTooltip: "オプション",
+    menuPause: "再開するまで停止",
+    menuSnooze30: "30分止める",
+    menuSnooze60: "1時間止める",
+    menuSnooze180: "3時間止める",
+    snoozedNotice: "Popup Review for Spaced Repetition: {time} までポップアップを停止しました。",
+    snoozedNow: "{time} まで停止中（スヌーズ）",
     ratingFailed:
         "Popup Review for Spaced Repetition: 評価の書き込みに失敗しました。詳細は開発者コンソールを確認してください。",
     ratingTimeout:

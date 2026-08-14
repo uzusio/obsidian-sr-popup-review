@@ -41,6 +41,7 @@ Tested with Spaced Repetition **v1.15.4**.
 | Click **Show answer** / press `Space` or `Enter` | Reveals the answer in place |
 | Click **Again / Hard / Good / Easy** / press `1`–`4` | Saves the rating and closes |
 | Click **✕** / press `Esc` | Closes without saving anything |
+| Click **⋯** (next to ✕) | Options menu: pause until resumed, or snooze popups for 30 min / 1 h / 3 h |
 | Drag the header | Moves the popup |
 
 The rating buttons use the labels you configured in the Spaced Repetition plugin. Card text is rendered as Markdown, and cloze deletions are masked exactly as in the normal review modal.

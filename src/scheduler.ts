@@ -102,6 +102,10 @@ export class Scheduler {
             log("paused by the user");
             return;
         }
+        if (mode !== "manual" && Date.now() < s.snoozeUntil) {
+            log(`snoozed until ${moment(s.snoozeUntil).format("HH:mm")}`);
+            return;
+        }
         if (this.plugin.popup.isOpen) {
             if (await this.plugin.popup.ensureAlive()) {
                 log("a popup is already open");

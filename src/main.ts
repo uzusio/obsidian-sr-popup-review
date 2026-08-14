@@ -1,4 +1,4 @@
-import { Notice, Plugin, setIcon } from "obsidian";
+import { Notice, Plugin, moment, setIcon } from "obsidian";
 import { SRBridge } from "./sr-bridge";
 import { DiagLog } from "./diaglog";
 import { PopupController } from "./popup";
@@ -23,7 +23,23 @@ export default class SRPopupPlugin extends Plugin {
         );
         void this.diag.init();
         this.diag.log(`plugin loaded (v${this.manifest.version})`);
-        this.popup = new PopupController(this.app, this, (message) => this.diag.log(message));
+        this.popup = new PopupController(
+            this.app,
+            this,
+            (message) => this.diag.log(message),
+            async (action, minutes) => {
+                if (action === "pause") {
+                    await this.setPaused(true);
+                    return;
+                }
+                if (minutes === undefined || minutes <= 0) return;
+                this.settings.snoozeUntil = Date.now() + minutes * 60_000;
+                await this.saveSettings();
+                const until = moment(this.settings.snoozeUntil).format("HH:mm");
+                this.diag.log(`snoozed for ${minutes} min (until ${until})`);
+                new Notice(t("snoozedNotice", { time: until }));
+            },
+        );
         this.scheduler = new Scheduler(this);
 
         this.addSettingTab(new SRPopupSettingTab(this.app, this));
@@ -52,6 +68,7 @@ export default class SRPopupPlugin extends Plugin {
 
     async setPaused(paused: boolean): Promise<void> {
         this.settings.paused = paused;
+        if (!paused) this.settings.snoozeUntil = 0; // resuming clears any snooze too
         await this.saveSettings();
         this.updatePauseIndicator();
         new Notice(t(paused ? "pausedOn" : "pausedOff"));
