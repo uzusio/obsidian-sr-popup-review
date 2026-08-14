@@ -106,6 +106,11 @@ export default class SRPopupPlugin extends Plugin {
         }
         // "Due cards only" was replaced by the daily new-card budget (newCardsPerDay).
         delete (this.settings as unknown as Record<string, unknown>).dueCardsOnly;
+        // v1.0.4 stored only newCardsPerDay (0 = none, no unlimited state) —
+        // map it onto the mode dropdown introduced afterwards.
+        if (data.newCardsMode === undefined && typeof data.newCardsPerDay === "number") {
+            this.settings.newCardsMode = data.newCardsPerDay <= 0 ? "none" : "limited";
+        }
         setLocaleOverride(this.settings.language);
     }
 

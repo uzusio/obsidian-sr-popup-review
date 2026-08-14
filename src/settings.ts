@@ -14,7 +14,9 @@ export interface SRPopupSettings {
     quietHoursStart: string;
     quietHoursEnd: string;
     autoCloseSeconds: number;
-    /** Daily budget of never-reviewed cards introduced when nothing is due (0 = due cards only). */
+    /** Whether never-reviewed cards are introduced when nothing is due. */
+    newCardsMode: "none" | "limited" | "unlimited";
+    /** Daily cap used when newCardsMode is "limited". */
     newCardsPerDay: number;
     /** Persisted state: date ("YYYY-MM-DD") and count of new cards shown that day. */
     newCardsShownDate: string;
@@ -40,6 +42,7 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
     quietHoursStart: "01:00",
     quietHoursEnd: "09:00",
     autoCloseSeconds: 90,
+    newCardsMode: "limited",
     newCardsPerDay: 10,
     newCardsShownDate: "",
     newCardsShownCount: 0,
@@ -216,17 +219,39 @@ export class SRPopupSettingTab extends PluginSettingTab {
         }
 
         new Setting(containerEl)
-            .setName(t("settingsNewPerDay"))
-            .setDesc(t("settingsNewPerDayDesc"))
-            .addText((text) =>
-                text.setValue(String(this.plugin.settings.newCardsPerDay)).onChange(async (v) => {
-                    const n = Number(v);
-                    if (Number.isFinite(n) && n >= 0) {
-                        this.plugin.settings.newCardsPerDay = Math.round(n);
-                        await this.plugin.saveSettings();
-                    }
-                }),
+            .setName(t("settingsNewMode"))
+            .setDesc(t("settingsNewModeDesc"))
+            .addDropdown((dropdown) =>
+                dropdown
+                    .addOption("none", t("newModeNone"))
+                    .addOption("limited", t("newModeLimited"))
+                    .addOption("unlimited", t("newModeUnlimited"))
+                    .setValue(this.plugin.settings.newCardsMode)
+                    .onChange(async (v) => {
+                        if (v === "none" || v === "limited" || v === "unlimited") {
+                            this.plugin.settings.newCardsMode = v;
+                            await this.plugin.saveSettings();
+                            this.display(); // show/hide the per-day cap
+                        }
+                    }),
             );
+
+        if (this.plugin.settings.newCardsMode === "limited") {
+            new Setting(containerEl)
+                .setName(t("settingsNewPerDay"))
+                .setDesc(t("settingsNewPerDayDesc"))
+                .addText((text) =>
+                    text.setValue(String(this.plugin.settings.newCardsPerDay)).onChange(
+                        async (v) => {
+                            const n = Number(v);
+                            if (Number.isFinite(n) && n >= 1) {
+                                this.plugin.settings.newCardsPerDay = Math.round(n);
+                                await this.plugin.saveSettings();
+                            }
+                        },
+                    ),
+                );
+        }
 
         new Setting(containerEl)
             .setName(t("settingsRandomDeck"))

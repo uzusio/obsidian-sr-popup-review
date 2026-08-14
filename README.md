@@ -59,7 +59,7 @@ To pause automatic popups, click the **bell icon in the status bar** (bottom rig
 | Popup interval (minutes) | 120 | How often a popup may appear (minimum 5) |
 | Do not disturb | on, 01:00–09:00 | Toggle plus a time range with no popups; supports ranges across midnight |
 | Auto-close (seconds) | 90 | Closes an untouched popup (nothing is written); 0 disables |
-| New cards per day | 10 | When nothing is due, introduce up to this many never-reviewed cards per day so they enter the review cycle; 0 = due cards only |
+| New cards | Up to a daily limit (10/day) | When nothing is due, never-reviewed cards are introduced into the cycle: *don't introduce* / *up to a daily limit* / *unlimited* |
 | Randomize deck order | on | Pick each popup card from a random deck (weighted by due count) so every due card has a roughly equal chance; off follows Spaced Repetition's sequential deck order |
 | Skip popups during fullscreen apps | on | Postpones popups while Windows reports a fullscreen app or presentation (games, slideshows, F11); the card appears within a minute after fullscreen ends. Windows only |
 | Deck filter | All decks | *All decks* or *Only listed decks* |

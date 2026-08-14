@@ -50,7 +50,10 @@ export class Scheduler {
     }
 
     private newCardBudgetLeft(): boolean {
-        return this.newCardsShownToday() < this.plugin.settings.newCardsPerDay;
+        const s = this.plugin.settings;
+        if (s.newCardsMode === "none") return false;
+        if (s.newCardsMode === "unlimited") return true;
+        return this.newCardsShownToday() < s.newCardsPerDay;
     }
 
     async tick(mode: TickMode): Promise<void> {
@@ -168,10 +171,12 @@ export class Scheduler {
                 introducesNewCard = session?.isNewCard === true;
                 if (session) {
                     log(
-                        `no due card; introducing a new card (${this.newCardsShownToday() + 1}/${s.newCardsPerDay} today)`,
+                        s.newCardsMode === "unlimited"
+                            ? "no due card; introducing a new card (unlimited)"
+                            : `no due card; introducing a new card (${this.newCardsShownToday() + 1}/${s.newCardsPerDay} today)`,
                     );
                 }
-            } else if (s.newCardsPerDay > 0) {
+            } else if (s.newCardsMode === "limited") {
                 log(`no due card; daily new-card budget reached (${s.newCardsPerDay}/day)`);
             }
         }
