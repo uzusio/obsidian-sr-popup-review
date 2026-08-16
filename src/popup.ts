@@ -102,6 +102,7 @@ export class PopupController {
     private win: BrowserWindowLike | null = null;
     private session: ReviewSession | null = null;
     private revealed = false;
+    private wasShown = false;
     private heartbeatTimer: number | null = null;
     /**
      * Bumped on every show()/finish(). Async continuations (event loop, load,
@@ -117,6 +118,8 @@ export class PopupController {
         private diag: (message: string) => void,
         /** Handles the popup's options menu: pause, or snooze for N minutes. */
         private onControl: (action: "pause" | "snooze", minutes?: number) => Promise<void>,
+        /** Called when a popup that was actually shown ends (rated or dismissed). */
+        private onSessionEnd: () => void,
     ) {}
 
     get isOpen(): boolean {
@@ -210,6 +213,7 @@ export class PopupController {
             // Defensive: never leak a previous session's interval.
             window.clearInterval(this.heartbeatTimer);
         }
+        this.wasShown = true;
         this.heartbeatTimer = window.setInterval(() => this.heartbeatTick(gen), HEARTBEAT_SEND_MS);
         void this.eventLoop(gen);
         this.diag(
@@ -394,6 +398,8 @@ export class PopupController {
             this.heartbeatTimer = null;
         }
         const win = this.win;
+        const endedVisibleSession = this.wasShown;
+        this.wasShown = false;
         this.win = null;
         this.session = null;
         try {
@@ -401,6 +407,10 @@ export class PopupController {
         } catch {
             /* already gone */
         }
+        // The popup interval is anchored to the END of a popup, not its start:
+        // a popup that sat open past the interval must not be followed by the
+        // next one within a minute of being rated/dismissed.
+        if (endedVisibleSession) this.onSessionEnd();
     }
 
     private async renderMarkdown(markdown: string): Promise<string> {

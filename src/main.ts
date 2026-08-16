@@ -39,6 +39,12 @@ export default class SRPopupPlugin extends Plugin {
                 this.diag.log(`snoozed for ${minutes} min (until ${until})`);
                 new Notice(t("snoozedNotice", { time: until }));
             },
+            () => {
+                // Restart the popup interval from the moment a popup ends, so a
+                // long-open popup is not immediately followed by the next one.
+                this.settings.lastShownAt = Date.now();
+                void this.saveSettings();
+            },
         );
         this.scheduler = new Scheduler(this);
 
