@@ -27,6 +27,7 @@ interface BrowserWindowLike {
     setAlwaysOnTop?: (flag: boolean, level?: string) => void;
     moveTop?: () => void;
     setBounds?: (bounds: Bounds) => void;
+    getBounds?: () => Bounds;
     webContents?: WebContentsLike;
 }
 
@@ -50,9 +51,13 @@ function getRemote(): ElectronRemoteLike | null {
     }
 }
 
+/** Defaults, used until the user drags the window to a size of their own. */
 const WIDTH = 400;
 const HEIGHT_FRONT = 260;
 const HEIGHT_REVEALED = 470;
+/** Floor for user resizing: below this the card content stops being readable. */
+const MIN_WIDTH = 300;
+const MIN_HEIGHT = 180;
 const MARGIN = 16;
 /** loadURL can hang if the window's renderer dies mid-load — time-box it. */
 const LOAD_TIMEOUT_MS = 15_000;
@@ -105,6 +110,12 @@ export class PopupController {
     private wasShown = false;
     private heartbeatTimer: number | null = null;
     /**
+     * The size place() last applied to the window. Bounds that differ from it
+     * are a size the user dragged to — the only thing worth persisting. Null
+     * until a place() actually reached the window; nothing is saved before then.
+     */
+    private lastPlacedSize: { width: number; height: number } | null = null;
+    /**
      * Bumped on every show()/finish(). Async continuations (event loop, load,
      * liveness probe) compare their captured value against the current one and
      * abort when superseded, so a hung await can never act on a newer popup.
@@ -120,6 +131,18 @@ export class PopupController {
         private onControl: (action: "pause" | "snooze", minutes?: number) => Promise<void>,
         /** Called when a popup that was actually shown ends (rated or dismissed). */
         private onSessionEnd: () => void,
+        /** Reads the persisted popup size; null members = user never resized. */
+        private loadSizes: () => {
+            width: number | null;
+            heightFront: number | null;
+            heightRevealed: number | null;
+        },
+        /** Persists a changed popup size (fire-and-forget write). */
+        private saveSizes: (sizes: {
+            width: number;
+            heightFront?: number;
+            heightRevealed?: number;
+        }) => void,
     ) {}
 
     get isOpen(): boolean {
@@ -147,18 +170,22 @@ export class PopupController {
         const gen = ++this.generation;
         this.session = session;
         this.revealed = false;
+        this.lastPlacedSize = null;
 
         const html = await this.buildHtml(session, showDeckName, autoCloseSeconds);
         if (gen !== this.generation) return false;
+        const sizes = this.resolveSizes();
         let win: BrowserWindowLike;
         try {
             win = new BrowserWindowClass({
-                width: WIDTH,
-                height: HEIGHT_FRONT,
+                width: sizes.width,
+                height: sizes.heightFront,
                 frame: false,
                 alwaysOnTop: true,
                 skipTaskbar: true,
-                resizable: false,
+                resizable: true,
+                minWidth: MIN_WIDTH,
+                minHeight: MIN_HEIGHT,
                 show: false,
                 focusable: true,
                 roundedCorners: true,
@@ -169,7 +196,7 @@ export class PopupController {
             return false;
         }
         this.win = win;
-        this.place(remote, HEIGHT_FRONT);
+        this.place(remote, sizes.width, sizes.heightFront);
         const url = "data:text/html;charset=utf-8," + encodeURIComponent(html);
         const loadPromise =
             typeof win.loadURL === "function"
@@ -307,10 +334,15 @@ export class PopupController {
             }
             if (gen !== this.generation) return;
             if (!this.isOpen) break;
+            // Every event is a moment where the window is still alive: the popup
+            // closes itself after a rating or a menu action, so by the time
+            // finish() runs its bounds may already be unreadable.
+            this.captureSize();
             if (event === "revealed") {
                 this.revealed = true;
                 const remote = getRemote();
-                if (remote) this.place(remote, HEIGHT_REVEALED);
+                const sizes = this.resolveSizes();
+                if (remote) this.place(remote, sizes.width, sizes.heightRevealed);
                 continue;
             }
             if (event === "close") {
@@ -376,16 +408,76 @@ export class PopupController {
         if (gen === this.generation) this.finish();
     }
 
-    private place(remote: ElectronRemoteLike, height: number): void {
+    /**
+     * Persisted size with the built-in defaults filled in. Also guards against a
+     * hand-edited data.json: a non-finite value would reach setBounds as NaN.
+     */
+    private resolveSizes(): { width: number; heightFront: number; heightRevealed: number } {
+        const saved = this.loadSizes();
+        const pick = (value: number | null, fallback: number, min: number): number =>
+            typeof value === "number" && Number.isFinite(value)
+                ? Math.max(min, Math.round(value))
+                : fallback;
+        return {
+            width: pick(saved.width, WIDTH, MIN_WIDTH),
+            heightFront: pick(saved.heightFront, HEIGHT_FRONT, MIN_HEIGHT),
+            heightRevealed: pick(saved.heightRevealed, HEIGHT_REVEALED, MIN_HEIGHT),
+        };
+    }
+
+    /** Current window bounds, or null when the window is already gone. */
+    private readBounds(): Bounds | null {
+        try {
+            return this.win?.getBounds?.() ?? null;
+        } catch {
+            // A destroyed remote BrowserWindow throws on ANY member access.
+            return null;
+        }
+    }
+
+    /**
+     * Persists the size if the user dragged the window to one. Called from
+     * paths that also run when the popup is already dead or was never placed,
+     * so it must stay silent rather than throw.
+     */
+    private captureSize(): void {
+        const bounds = this.readBounds();
+        if (!bounds || !this.lastPlacedSize) return;
+        if (
+            bounds.width === this.lastPlacedSize.width &&
+            bounds.height === this.lastPlacedSize.height
+        ) {
+            return;
+        }
+        try {
+            this.saveSizes(
+                this.revealed
+                    ? { width: bounds.width, heightRevealed: bounds.height }
+                    : { width: bounds.width, heightFront: bounds.height },
+            );
+            this.lastPlacedSize = { width: bounds.width, height: bounds.height };
+        } catch (e) {
+            console.error("[sr-popup-review] failed to persist popup size", e);
+        }
+    }
+
+    private place(remote: ElectronRemoteLike, width: number, height: number): void {
         try {
             const workArea = remote.screen?.getPrimaryDisplay?.()?.workArea;
             if (!workArea) return;
-            this.win?.setBounds?.({
-                x: Math.round(workArea.x + workArea.width - WIDTH - MARGIN),
+            // A size dragged on a larger display must not push the popup off a
+            // smaller one (the anchor is the bottom-right corner).
+            width = Math.min(width, workArea.width - MARGIN * 2);
+            height = Math.min(height, workArea.height - MARGIN * 2);
+            const win = this.win;
+            if (typeof win?.setBounds !== "function") return;
+            win.setBounds({
+                x: Math.round(workArea.x + workArea.width - width - MARGIN),
                 y: Math.round(workArea.y + workArea.height - height - MARGIN),
-                width: WIDTH,
+                width,
                 height,
             });
+            this.lastPlacedSize = { width, height };
         } catch (e) {
             console.error("[sr-popup-review] failed to position popup", e);
         }
@@ -397,6 +489,7 @@ export class PopupController {
             window.clearInterval(this.heartbeatTimer);
             this.heartbeatTimer = null;
         }
+        this.captureSize();
         const win = this.win;
         const endedVisibleSession = this.wasShown;
         this.wasShown = false;

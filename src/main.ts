@@ -45,6 +45,21 @@ export default class SRPopupPlugin extends Plugin {
                 this.settings.lastShownAt = Date.now();
                 void this.saveSettings();
             },
+            () => ({
+                width: this.settings.popupWidth,
+                heightFront: this.settings.popupHeightFront,
+                heightRevealed: this.settings.popupHeightRevealed,
+            }),
+            (sizes) => {
+                this.settings.popupWidth = sizes.width;
+                if (sizes.heightFront !== undefined) {
+                    this.settings.popupHeightFront = sizes.heightFront;
+                }
+                if (sizes.heightRevealed !== undefined) {
+                    this.settings.popupHeightRevealed = sizes.heightRevealed;
+                }
+                void this.saveSettings();
+            },
         );
         this.scheduler = new Scheduler(this);
 

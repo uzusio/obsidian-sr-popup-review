@@ -32,6 +32,10 @@ export interface SRPopupSettings {
     lastShownAt: number;
     /** Persisted state: no automatic popups before this time (snooze from the popup menu). */
     snoozeUntil: number;
+    /** Popup size the user last resized to; null = built-in defaults. */
+    popupWidth: number | null;
+    popupHeightFront: number | null;
+    popupHeightRevealed: number | null;
 }
 
 export const DEFAULT_SETTINGS: SRPopupSettings = {
@@ -54,6 +58,9 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
     checkOnStartup: false,
     lastShownAt: 0,
     snoozeUntil: 0,
+    popupWidth: null,
+    popupHeightFront: null,
+    popupHeightRevealed: null,
 };
 
 const HHMM_RE = /^(\d{1,2}):(\d{2})$/;
