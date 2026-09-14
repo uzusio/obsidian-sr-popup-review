@@ -2,3 +2,7 @@ node_modules/
 main.js
 *.map
 .env
+
+# Local development harness (not part of the published repo)
+CLAUDE.md
+.claude/
