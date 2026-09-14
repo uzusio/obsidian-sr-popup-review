@@ -2,6 +2,13 @@ import { App, PluginSettingTab, Setting, moment } from "obsidian";
 import type SRPopupPlugin from "./main";
 import { normalizeDeckPaths } from "./sr-bridge";
 import { isInQuietHours, quietHoursEndDate } from "./scheduler";
+import {
+    DEFAULT_HEIGHT_FRONT,
+    DEFAULT_HEIGHT_REVEALED,
+    DEFAULT_WIDTH,
+    MIN_HEIGHT,
+    MIN_WIDTH,
+} from "./popup";
 import { setLocaleOverride, t } from "./i18n";
 
 export interface SRPopupSettings {
@@ -32,7 +39,7 @@ export interface SRPopupSettings {
     lastShownAt: number;
     /** Persisted state: no automatic popups before this time (snooze from the popup menu). */
     snoozeUntil: number;
-    /** Popup size the user last resized to; null = built-in defaults. */
+    /** Default popup size; null = built-in defaults. */
     popupWidth: number | null;
     popupHeightFront: number | null;
     popupHeightRevealed: number | null;
@@ -161,6 +168,59 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 }),
             );
 
+        const size = new Setting(containerEl).setName(t("popupSizeName")).setDesc(
+            t("popupSizeDesc", {
+                w: DEFAULT_WIDTH,
+                hf: DEFAULT_HEIGHT_FRONT,
+                hr: DEFAULT_HEIGHT_REVEALED,
+            }),
+        );
+        const addSizeInput = (
+            value: number | null,
+            fallback: number,
+            min: number,
+            save: (v: number | null) => void,
+        ) => {
+            size.addText((text) => {
+                text.setPlaceholder(String(fallback));
+                text.setValue(value === null ? "" : String(value));
+                text.onChange(async (raw) => {
+                    const trimmed = raw.trim();
+                    if (trimmed === "") {
+                        save(null); // empty = back to the built-in default
+                        await this.plugin.saveSettings();
+                        return;
+                    }
+                    const n = Number(trimmed);
+                    if (Number.isFinite(n) && n >= min) {
+                        save(Math.round(n));
+                        await this.plugin.saveSettings();
+                    }
+                });
+            });
+        };
+        addSizeInput(this.plugin.settings.popupWidth, DEFAULT_WIDTH, MIN_WIDTH, (v) => {
+            this.plugin.settings.popupWidth = v;
+        });
+        size.controlEl.createSpan({ text: "×", cls: "sr-popup-separator" });
+        addSizeInput(
+            this.plugin.settings.popupHeightFront,
+            DEFAULT_HEIGHT_FRONT,
+            MIN_HEIGHT,
+            (v) => {
+                this.plugin.settings.popupHeightFront = v;
+            },
+        );
+        size.controlEl.createSpan({ text: "/", cls: "sr-popup-separator" });
+        addSizeInput(
+            this.plugin.settings.popupHeightRevealed,
+            DEFAULT_HEIGHT_REVEALED,
+            MIN_HEIGHT,
+            (v) => {
+                this.plugin.settings.popupHeightRevealed = v;
+            },
+        );
+
         const quiet = new Setting(containerEl)
             .setName(t("settingsQuietHours"))
             .setDesc(t("settingsQuietHoursDesc"));
@@ -186,7 +246,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
         addTimeInput(this.plugin.settings.quietHoursStart, (v) => {
             this.plugin.settings.quietHoursStart = v;
         });
-        quiet.controlEl.createSpan({ text: "〜", cls: "sr-popup-quiet-separator" });
+        quiet.controlEl.createSpan({ text: "〜", cls: "sr-popup-separator" });
         addTimeInput(this.plugin.settings.quietHoursEnd, (v) => {
             this.plugin.settings.quietHoursEnd = v;
         });

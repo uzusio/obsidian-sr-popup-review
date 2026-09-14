@@ -51,13 +51,13 @@ function getRemote(): ElectronRemoteLike | null {
     }
 }
 
-/** Defaults, used until the user drags the window to a size of their own. */
-const WIDTH = 400;
-const HEIGHT_FRONT = 260;
-const HEIGHT_REVEALED = 470;
-/** Floor for user resizing: below this the card content stops being readable. */
-const MIN_WIDTH = 300;
-const MIN_HEIGHT = 180;
+/** Built-in size, used until the user configures one in the settings tab. */
+export const DEFAULT_WIDTH = 400;
+export const DEFAULT_HEIGHT_FRONT = 260;
+export const DEFAULT_HEIGHT_REVEALED = 470;
+/** Floor for both the configured size and dragging: below this a card stops being readable. */
+export const MIN_WIDTH = 300;
+export const MIN_HEIGHT = 180;
 const MARGIN = 16;
 /** loadURL can hang if the window's renderer dies mid-load — time-box it. */
 const LOAD_TIMEOUT_MS = 15_000;
@@ -110,12 +110,6 @@ export class PopupController {
     private wasShown = false;
     private heartbeatTimer: number | null = null;
     /**
-     * The size place() last applied to the window. Bounds that differ from it
-     * are a size the user dragged to — the only thing worth persisting. Null
-     * until a place() actually reached the window; nothing is saved before then.
-     */
-    private lastPlacedSize: { width: number; height: number } | null = null;
-    /**
      * Bumped on every show()/finish(). Async continuations (event loop, load,
      * liveness probe) compare their captured value against the current one and
      * abort when superseded, so a hung await can never act on a newer popup.
@@ -131,18 +125,12 @@ export class PopupController {
         private onControl: (action: "pause" | "snooze", minutes?: number) => Promise<void>,
         /** Called when a popup that was actually shown ends (rated or dismissed). */
         private onSessionEnd: () => void,
-        /** Reads the persisted popup size; null members = user never resized. */
+        /** Reads the user's configured popup size; null members = built-in defaults. */
         private loadSizes: () => {
             width: number | null;
             heightFront: number | null;
             heightRevealed: number | null;
         },
-        /** Persists a changed popup size (fire-and-forget write). */
-        private saveSizes: (sizes: {
-            width: number;
-            heightFront?: number;
-            heightRevealed?: number;
-        }) => void,
     ) {}
 
     get isOpen(): boolean {
@@ -170,7 +158,6 @@ export class PopupController {
         const gen = ++this.generation;
         this.session = session;
         this.revealed = false;
-        this.lastPlacedSize = null;
 
         const html = await this.buildHtml(session, showDeckName, autoCloseSeconds);
         if (gen !== this.generation) return false;
@@ -334,15 +321,14 @@ export class PopupController {
             }
             if (gen !== this.generation) return;
             if (!this.isOpen) break;
-            // Every event is a moment where the window is still alive: the popup
-            // closes itself after a rating or a menu action, so by the time
-            // finish() runs its bounds may already be unreadable.
-            this.captureSize();
             if (event === "revealed") {
                 this.revealed = true;
                 const remote = getRemote();
+                // Keep a width the user dragged to; only the height grows to fit
+                // the answer.
+                const bounds = this.readBounds();
                 const sizes = this.resolveSizes();
-                if (remote) this.place(remote, sizes.width, sizes.heightRevealed);
+                if (remote) this.place(remote, bounds?.width ?? sizes.width, sizes.heightRevealed);
                 continue;
             }
             if (event === "close") {
@@ -409,8 +395,8 @@ export class PopupController {
     }
 
     /**
-     * Persisted size with the built-in defaults filled in. Also guards against a
-     * hand-edited data.json: a non-finite value would reach setBounds as NaN.
+     * Configured size with the built-in defaults filled in. Also guards against
+     * a hand-edited data.json: a non-finite value would reach setBounds as NaN.
      */
     private resolveSizes(): { width: number; heightFront: number; heightRevealed: number } {
         const saved = this.loadSizes();
@@ -419,9 +405,9 @@ export class PopupController {
                 ? Math.max(min, Math.round(value))
                 : fallback;
         return {
-            width: pick(saved.width, WIDTH, MIN_WIDTH),
-            heightFront: pick(saved.heightFront, HEIGHT_FRONT, MIN_HEIGHT),
-            heightRevealed: pick(saved.heightRevealed, HEIGHT_REVEALED, MIN_HEIGHT),
+            width: pick(saved.width, DEFAULT_WIDTH, MIN_WIDTH),
+            heightFront: pick(saved.heightFront, DEFAULT_HEIGHT_FRONT, MIN_HEIGHT),
+            heightRevealed: pick(saved.heightRevealed, DEFAULT_HEIGHT_REVEALED, MIN_HEIGHT),
         };
     }
 
@@ -432,32 +418,6 @@ export class PopupController {
         } catch {
             // A destroyed remote BrowserWindow throws on ANY member access.
             return null;
-        }
-    }
-
-    /**
-     * Persists the size if the user dragged the window to one. Called from
-     * paths that also run when the popup is already dead or was never placed,
-     * so it must stay silent rather than throw.
-     */
-    private captureSize(): void {
-        const bounds = this.readBounds();
-        if (!bounds || !this.lastPlacedSize) return;
-        if (
-            bounds.width === this.lastPlacedSize.width &&
-            bounds.height === this.lastPlacedSize.height
-        ) {
-            return;
-        }
-        try {
-            this.saveSizes(
-                this.revealed
-                    ? { width: bounds.width, heightRevealed: bounds.height }
-                    : { width: bounds.width, heightFront: bounds.height },
-            );
-            this.lastPlacedSize = { width: bounds.width, height: bounds.height };
-        } catch (e) {
-            console.error("[sr-popup-review] failed to persist popup size", e);
         }
     }
 
@@ -477,7 +437,6 @@ export class PopupController {
                 width,
                 height,
             });
-            this.lastPlacedSize = { width, height };
         } catch (e) {
             console.error("[sr-popup-review] failed to position popup", e);
         }
@@ -489,7 +448,6 @@ export class PopupController {
             window.clearInterval(this.heartbeatTimer);
             this.heartbeatTimer = null;
         }
-        this.captureSize();
         const win = this.win;
         const endedVisibleSession = this.wasShown;
         this.wasShown = false;

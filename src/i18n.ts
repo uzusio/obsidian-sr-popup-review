@@ -52,6 +52,9 @@ const en: Strings = {
     popupOpenNow: "a popup is open right now",
     settingsInterval: "Popup interval (minutes)",
     settingsIntervalDesc: "How often a popup may appear. Minimum 5 minutes.",
+    popupSizeName: "Popup size",
+    popupSizeDesc:
+        "Width, question height, and answer height in pixels. Leave a field empty for the default ({w} × {hf} / {hr}).",
     settingsQuietHours: "Do not disturb",
     settingsQuietHoursDesc:
         "No popups during this time range (ranges across midnight are supported).",
@@ -143,6 +146,8 @@ const ja: Strings = {
     popupOpenNow: "現在ポップアップを表示中",
     settingsInterval: "ポップアップ間隔（分）",
     settingsIntervalDesc: "ポップアップを出す間隔。最小5分。",
+    popupSizeName: "ポップアップのサイズ",
+    popupSizeDesc: "幅・問題表示の高さ・解答表示の高さ（px）。空欄で既定値（{w} × {hf} / {hr}）。",
     settingsQuietHours: "ポップアップ停止時間帯",
     settingsQuietHoursDesc: "この時間帯はポップアップを出しません（日付をまたぐ範囲も指定できます）。",
     settingsAutoClose: "自動クローズ（秒）",
