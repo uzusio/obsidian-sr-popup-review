@@ -1,4 +1,5 @@
-import { App, PluginSettingTab, Setting, moment } from "obsidian";
+import { App, PluginSettingTab, moment } from "obsidian";
+import type { Setting, SettingDefinitionItem, SettingGroup } from "obsidian";
 import type SRPopupPlugin from "./main";
 import { normalizeDeckPaths } from "./sr-bridge";
 import { isInQuietHours, quietHoursEndDate } from "./scheduler";
@@ -71,7 +72,16 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
 };
 
 const HHMM_RE = /^(\d{1,2}):(\d{2})$/;
+const MIN_INTERVAL_MINUTES = 5;
 
+/**
+ * Declarative settings tab (Obsidian 1.13+). Every row is a definition so it
+ * reaches the settings search; rows whose controls the framework cannot express
+ * (popup size, do-not-disturb range, deck picker) use `render` instead.
+ *
+ * Definitions are rebuilt on every update() because their labels come from t():
+ * switching the language re-renders the tab in the new one.
+ */
 export class SRPopupSettingTab extends PluginSettingTab {
     constructor(
         app: App,
@@ -80,108 +90,240 @@ export class SRPopupSettingTab extends PluginSettingTab {
         super(app, plugin);
     }
 
-    display(): void {
-        const { containerEl } = this;
-        containerEl.empty();
-
-        new Setting(containerEl)
-            .setName(t("settingsLanguage"))
-            .setDesc(t("settingsLanguageDesc"))
-            .addDropdown((dropdown) =>
-                dropdown
-                    .addOption("-", t("languageDefault"))
-                    .addOption("en", "English")
-                    .addOption("ja", "日本語")
-                    .setValue(this.plugin.settings.language)
-                    .onChange(async (v) => {
-                        if (v === "-" || v === "en" || v === "ja") {
-                            this.plugin.settings.language = v;
-                            setLocaleOverride(v);
-                            await this.plugin.saveSettings();
-                            this.display(); // re-render the tab in the new language
+    getSettingDefinitions(): SettingDefinitionItem[] {
+        return [
+            {
+                name: t("settingsLanguage"),
+                desc: t("settingsLanguageDesc"),
+                control: {
+                    type: "dropdown",
+                    key: "language",
+                    options: { "-": t("languageDefault"), en: "English", ja: "日本語" },
+                },
+            },
+            { name: t("settingsStatus"), desc: this.statusDesc() },
+            { name: t("settingsNextPopup"), desc: this.scheduleDesc() },
+            {
+                name: t("settingsPaused"),
+                desc: t("settingsPausedDesc"),
+                control: { type: "toggle", key: "paused" },
+            },
+            {
+                name: t("settingsInterval"),
+                desc: t("settingsIntervalDesc"),
+                control: {
+                    type: "number",
+                    key: "intervalMinutes",
+                    min: MIN_INTERVAL_MINUTES,
+                    step: 1,
+                    validate: (v) => {
+                        if (!Number.isFinite(v) || v < MIN_INTERVAL_MINUTES) {
+                            return t("settingsIntervalInvalid");
                         }
-                    }),
-            );
+                    },
+                },
+            },
+            {
+                name: t("popupSizeName"),
+                desc: t("popupSizeDesc", {
+                    w: DEFAULT_WIDTH,
+                    hf: DEFAULT_HEIGHT_FRONT,
+                    hr: DEFAULT_HEIGHT_REVEALED,
+                }),
+                render: (setting) => {
+                    this.renderPopupSize(setting);
+                },
+            },
+            {
+                name: t("settingsQuietHours"),
+                desc: t("settingsQuietHoursDesc"),
+                render: (setting) => {
+                    this.renderQuietHours(setting);
+                },
+            },
+            {
+                name: t("settingsAutoClose"),
+                desc: t("settingsAutoCloseDesc"),
+                control: {
+                    type: "number",
+                    key: "autoCloseSeconds",
+                    min: 0,
+                    step: 1,
+                    validate: (v) => {
+                        if (!Number.isFinite(v) || v < 0) return t("settingsAutoCloseInvalid");
+                    },
+                },
+            },
+            {
+                name: t("settingsDeckFilterMode"),
+                desc: t("settingsDeckFilterModeDesc"),
+                control: {
+                    type: "dropdown",
+                    key: "deckFilterMode",
+                    options: { all: t("deckFilterAll"), include: t("deckFilterInclude") },
+                },
+            },
+            {
+                name: t("settingsDeckFilterList"),
+                desc: t("settingsDeckFilterListDesc"),
+                visible: () => this.plugin.settings.deckFilterMode !== "all",
+                render: (setting, group) => this.renderDeckPicker(setting, group),
+            },
+            {
+                name: t("settingsNewMode"),
+                desc: t("settingsNewModeDesc"),
+                control: {
+                    type: "dropdown",
+                    key: "newCardsMode",
+                    options: {
+                        none: t("newModeNone"),
+                        limited: t("newModeLimited"),
+                        unlimited: t("newModeUnlimited"),
+                    },
+                },
+            },
+            {
+                name: t("settingsNewPerDay"),
+                desc: t("settingsNewPerDayDesc"),
+                visible: () => this.plugin.settings.newCardsMode === "limited",
+                control: {
+                    type: "number",
+                    key: "newCardsPerDay",
+                    min: 1,
+                    step: 1,
+                    validate: (v) => {
+                        if (!Number.isFinite(v) || v < 1) return t("settingsNewPerDayInvalid");
+                    },
+                },
+            },
+            {
+                name: t("settingsRandomDeck"),
+                desc: t("settingsRandomDeckDesc"),
+                control: { type: "toggle", key: "randomizeDeckOrder" },
+            },
+            {
+                name: t("settingsFullscreen"),
+                desc: t("settingsFullscreenDesc"),
+                control: { type: "toggle", key: "pauseDuringFullscreen" },
+            },
+            {
+                name: t("settingsShowDeckName"),
+                desc: t("settingsShowDeckNameDesc"),
+                control: { type: "toggle", key: "showDeckName" },
+            },
+            {
+                name: t("settingsCheckOnStartup"),
+                desc: t("settingsCheckOnStartupDesc"),
+                control: { type: "toggle", key: "checkOnStartup" },
+            },
+        ];
+    }
 
+    getControlValue(key: string): unknown {
+        return (this.plugin.settings as unknown as Record<string, unknown>)[key];
+    }
+
+    /**
+     * Every key is handled here rather than by the default implementation, so
+     * that all writes go through the plugin's saveSettings() and so that keys
+     * with side effects (locale, pause state, dependent rows) can trigger them.
+     */
+    async setControlValue(key: string, value: unknown): Promise<void> {
+        switch (key) {
+            case "language": {
+                if (value !== "-" && value !== "en" && value !== "ja") return;
+                this.plugin.settings.language = value;
+                setLocaleOverride(value);
+                await this.plugin.saveSettings();
+                this.update(); // rebuild every label in the new language
+                return;
+            }
+            case "paused": {
+                if (typeof value !== "boolean") return;
+                await this.plugin.setPaused(value); // also saves and updates the status bar
+                this.update(); // refresh the schedule line
+                return;
+            }
+            case "deckFilterMode": {
+                if (value !== "all" && value !== "include") return;
+                this.plugin.settings.deckFilterMode = value;
+                await this.plugin.saveSettings();
+                this.update(); // show/hide the deck picker
+                return;
+            }
+            case "newCardsMode": {
+                if (value !== "none" && value !== "limited" && value !== "unlimited") return;
+                this.plugin.settings.newCardsMode = value;
+                await this.plugin.saveSettings();
+                this.update(); // show/hide the per-day cap
+                return;
+            }
+            case "intervalMinutes":
+            case "autoCloseSeconds":
+            case "newCardsPerDay": {
+                if (typeof value !== "number" || !Number.isFinite(value)) return;
+                this.plugin.settings[key] = Math.round(value);
+                await this.plugin.saveSettings();
+                return;
+            }
+            case "randomizeDeckOrder":
+            case "pauseDuringFullscreen":
+            case "showDeckName":
+            case "checkOnStartup": {
+                if (typeof value !== "boolean") return;
+                this.plugin.settings[key] = value;
+                await this.plugin.saveSettings();
+                return;
+            }
+        }
+    }
+
+    private statusDesc(): string {
         const probe = this.plugin.bridge.probe();
         const version = this.plugin.bridge.getSRPlugin()?.manifest?.version ?? "?";
-        new Setting(containerEl)
-            .setName(t("settingsStatus"))
-            .setDesc(
-                probe.status === "ok"
-                    ? t("settingsStatusOk", { version })
-                    : t("settingsStatusNg", { reason: probe.reason ?? "?" }),
-            );
+        return probe.status === "ok"
+            ? t("settingsStatusOk", { version })
+            : t("settingsStatusNg", { reason: probe.reason ?? "?" });
+    }
 
-        // Diagnosis: when the next automatic popup can appear (interval gate,
-        // pushed back to the end of do-not-disturb if that is later).
-        {
-            const s = this.plugin.settings;
-            const now = new Date();
-            let nextAt = s.lastShownAt + s.intervalMinutes * 60_000;
-            if (
-                s.quietHoursEnabled &&
-                isInQuietHours(now, s.quietHoursStart, s.quietHoursEnd)
-            ) {
-                const dndEnd = quietHoursEndDate(now, s.quietHoursEnd);
-                if (dndEnd && dndEnd.getTime() > nextAt) nextAt = dndEnd.getTime();
-            }
-            const fmt = (ts: number): string => moment(ts).format("YYYY-MM-DD HH:mm");
-            const lastText = s.lastShownAt === 0 ? t("lastPopupNever") : fmt(s.lastShownAt);
-            const backoffUntil = this.plugin.scheduler.getNothingDueUntil();
-            const nextText = this.plugin.popup.isOpen
-                ? t("popupOpenNow")
-                : s.paused
-                  ? t("pausedNow")
-                  : s.snoozeUntil > now.getTime()
-                    ? t("snoozedNow", { time: fmt(s.snoozeUntil) })
-                    : backoffUntil > now.getTime()
-                    ? t("nextPopupBackoff", { time: fmt(backoffUntil) })
-                    : nextAt <= now.getTime()
-                      ? t("nextPopupAsap")
-                      : t("nextPopupAt", { time: fmt(nextAt) });
-            new Setting(containerEl)
-                .setName(t("settingsNextPopup"))
-                .setDesc(t("settingsNextPopupDesc", { last: lastText, next: nextText }));
+    /**
+     * Diagnosis: when the next automatic popup can appear (interval gate,
+     * pushed back to the end of do-not-disturb if that is later).
+     */
+    private scheduleDesc(): string {
+        const s = this.plugin.settings;
+        const now = new Date();
+        let nextAt = s.lastShownAt + s.intervalMinutes * 60_000;
+        if (s.quietHoursEnabled && isInQuietHours(now, s.quietHoursStart, s.quietHoursEnd)) {
+            const dndEnd = quietHoursEndDate(now, s.quietHoursEnd);
+            if (dndEnd && dndEnd.getTime() > nextAt) nextAt = dndEnd.getTime();
         }
+        const fmt = (ts: number): string => moment(ts).format("YYYY-MM-DD HH:mm");
+        const lastText = s.lastShownAt === 0 ? t("lastPopupNever") : fmt(s.lastShownAt);
+        const backoffUntil = this.plugin.scheduler.getNothingDueUntil();
+        const nextText = this.plugin.popup.isOpen
+            ? t("popupOpenNow")
+            : s.paused
+              ? t("pausedNow")
+              : s.snoozeUntil > now.getTime()
+                ? t("snoozedNow", { time: fmt(s.snoozeUntil) })
+                : backoffUntil > now.getTime()
+                  ? t("nextPopupBackoff", { time: fmt(backoffUntil) })
+                  : nextAt <= now.getTime()
+                    ? t("nextPopupAsap")
+                    : t("nextPopupAt", { time: fmt(nextAt) });
+        return t("settingsNextPopupDesc", { last: lastText, next: nextText });
+    }
 
-        new Setting(containerEl)
-            .setName(t("settingsPaused"))
-            .setDesc(t("settingsPausedDesc"))
-            .addToggle((toggle) =>
-                toggle.setValue(this.plugin.settings.paused).onChange(async (v) => {
-                    await this.plugin.setPaused(v);
-                    this.display(); // refresh the schedule line
-                }),
-            );
-
-        new Setting(containerEl)
-            .setName(t("settingsInterval"))
-            .setDesc(t("settingsIntervalDesc"))
-            .addText((text) =>
-                text.setValue(String(this.plugin.settings.intervalMinutes)).onChange(async (v) => {
-                    const n = Number(v);
-                    if (Number.isFinite(n) && n >= 5) {
-                        this.plugin.settings.intervalMinutes = Math.round(n);
-                        await this.plugin.saveSettings();
-                    }
-                }),
-            );
-
-        const size = new Setting(containerEl).setName(t("popupSizeName")).setDesc(
-            t("popupSizeDesc", {
-                w: DEFAULT_WIDTH,
-                hf: DEFAULT_HEIGHT_FRONT,
-                hr: DEFAULT_HEIGHT_REVEALED,
-            }),
-        );
+    /** Width / question height / answer height; an empty field means the default. */
+    private renderPopupSize(setting: Setting): void {
         const addSizeInput = (
             value: number | null,
             fallback: number,
             min: number,
             save: (v: number | null) => void,
-        ) => {
-            size.addText((text) => {
+        ): void => {
+            setting.addText((text) => {
                 text.setPlaceholder(String(fallback));
                 text.setValue(value === null ? "" : String(value));
                 text.onChange(async (raw) => {
@@ -202,7 +344,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
         addSizeInput(this.plugin.settings.popupWidth, DEFAULT_WIDTH, MIN_WIDTH, (v) => {
             this.plugin.settings.popupWidth = v;
         });
-        size.controlEl.createSpan({ text: "×", cls: "sr-popup-separator" });
+        setting.controlEl.createSpan({ text: "×", cls: "sr-popup-separator" });
         addSizeInput(
             this.plugin.settings.popupHeightFront,
             DEFAULT_HEIGHT_FRONT,
@@ -211,7 +353,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 this.plugin.settings.popupHeightFront = v;
             },
         );
-        size.controlEl.createSpan({ text: "/", cls: "sr-popup-separator" });
+        setting.controlEl.createSpan({ text: "/", cls: "sr-popup-separator" });
         addSizeInput(
             this.plugin.settings.popupHeightRevealed,
             DEFAULT_HEIGHT_REVEALED,
@@ -220,19 +362,20 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 this.plugin.settings.popupHeightRevealed = v;
             },
         );
+    }
 
-        const quiet = new Setting(containerEl)
-            .setName(t("settingsQuietHours"))
-            .setDesc(t("settingsQuietHoursDesc"));
-        quiet.addToggle((toggle) =>
+    /** On/off plus the time range; the inputs follow the toggle without a re-render. */
+    private renderQuietHours(setting: Setting): void {
+        const timeInputs: HTMLInputElement[] = [];
+        setting.addToggle((toggle) =>
             toggle.setValue(this.plugin.settings.quietHoursEnabled).onChange(async (v) => {
                 this.plugin.settings.quietHoursEnabled = v;
                 await this.plugin.saveSettings();
-                this.display(); // enable/disable the time inputs
+                for (const input of timeInputs) input.disabled = !v;
             }),
         );
-        const addTimeInput = (value: string, save: (v: string) => void) => {
-            quiet.addText((text) => {
+        const addTimeInput = (value: string, save: (v: string) => void): void => {
+            setting.addText((text) => {
                 text.setValue(value).onChange(async (v) => {
                     if (HHMM_RE.test(v.trim())) {
                         save(v.trim());
@@ -241,126 +384,16 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 });
                 text.inputEl.type = "time";
                 text.inputEl.disabled = !this.plugin.settings.quietHoursEnabled;
+                timeInputs.push(text.inputEl);
             });
         };
         addTimeInput(this.plugin.settings.quietHoursStart, (v) => {
             this.plugin.settings.quietHoursStart = v;
         });
-        quiet.controlEl.createSpan({ text: "〜", cls: "sr-popup-separator" });
+        setting.controlEl.createSpan({ text: "〜", cls: "sr-popup-separator" });
         addTimeInput(this.plugin.settings.quietHoursEnd, (v) => {
             this.plugin.settings.quietHoursEnd = v;
         });
-
-        new Setting(containerEl)
-            .setName(t("settingsAutoClose"))
-            .setDesc(t("settingsAutoCloseDesc"))
-            .addText((text) =>
-                text.setValue(String(this.plugin.settings.autoCloseSeconds)).onChange(async (v) => {
-                    const n = Number(v);
-                    if (Number.isFinite(n) && n >= 0) {
-                        this.plugin.settings.autoCloseSeconds = Math.round(n);
-                        await this.plugin.saveSettings();
-                    }
-                }),
-            );
-
-        new Setting(containerEl)
-            .setName(t("settingsDeckFilterMode"))
-            .setDesc(t("settingsDeckFilterModeDesc"))
-            .addDropdown((dropdown) =>
-                dropdown
-                    .addOption("all", t("deckFilterAll"))
-                    .addOption("include", t("deckFilterInclude"))
-                    .setValue(this.plugin.settings.deckFilterMode)
-                    .onChange(async (v) => {
-                        if (v === "all" || v === "include") {
-                            this.plugin.settings.deckFilterMode = v;
-                            await this.plugin.saveSettings();
-                            this.display(); // show/hide the deck picker
-                        }
-                    }),
-            );
-
-        if (this.plugin.settings.deckFilterMode !== "all") {
-            this.displayDeckPicker(containerEl);
-        }
-
-        new Setting(containerEl)
-            .setName(t("settingsNewMode"))
-            .setDesc(t("settingsNewModeDesc"))
-            .addDropdown((dropdown) =>
-                dropdown
-                    .addOption("none", t("newModeNone"))
-                    .addOption("limited", t("newModeLimited"))
-                    .addOption("unlimited", t("newModeUnlimited"))
-                    .setValue(this.plugin.settings.newCardsMode)
-                    .onChange(async (v) => {
-                        if (v === "none" || v === "limited" || v === "unlimited") {
-                            this.plugin.settings.newCardsMode = v;
-                            await this.plugin.saveSettings();
-                            this.display(); // show/hide the per-day cap
-                        }
-                    }),
-            );
-
-        if (this.plugin.settings.newCardsMode === "limited") {
-            new Setting(containerEl)
-                .setName(t("settingsNewPerDay"))
-                .setDesc(t("settingsNewPerDayDesc"))
-                .addText((text) =>
-                    text.setValue(String(this.plugin.settings.newCardsPerDay)).onChange(
-                        async (v) => {
-                            const n = Number(v);
-                            if (Number.isFinite(n) && n >= 1) {
-                                this.plugin.settings.newCardsPerDay = Math.round(n);
-                                await this.plugin.saveSettings();
-                            }
-                        },
-                    ),
-                );
-        }
-
-        new Setting(containerEl)
-            .setName(t("settingsRandomDeck"))
-            .setDesc(t("settingsRandomDeckDesc"))
-            .addToggle((toggle) =>
-                toggle.setValue(this.plugin.settings.randomizeDeckOrder).onChange(async (v) => {
-                    this.plugin.settings.randomizeDeckOrder = v;
-                    await this.plugin.saveSettings();
-                }),
-            );
-
-        new Setting(containerEl)
-            .setName(t("settingsFullscreen"))
-            .setDesc(t("settingsFullscreenDesc"))
-            .addToggle((toggle) =>
-                toggle
-                    .setValue(this.plugin.settings.pauseDuringFullscreen)
-                    .onChange(async (v) => {
-                        this.plugin.settings.pauseDuringFullscreen = v;
-                        await this.plugin.saveSettings();
-                    }),
-            );
-
-        new Setting(containerEl)
-            .setName(t("settingsShowDeckName"))
-            .setDesc(t("settingsShowDeckNameDesc"))
-            .addToggle((toggle) =>
-                toggle.setValue(this.plugin.settings.showDeckName).onChange(async (v) => {
-                    this.plugin.settings.showDeckName = v;
-                    await this.plugin.saveSettings();
-                }),
-            );
-
-        new Setting(containerEl)
-            .setName(t("settingsCheckOnStartup"))
-            .setDesc(t("settingsCheckOnStartupDesc"))
-            .addToggle((toggle) =>
-                toggle.setValue(this.plugin.settings.checkOnStartup).onChange(async (v) => {
-                    this.plugin.settings.checkOnStartup = v;
-                    await this.plugin.saveSettings();
-                }),
-            );
     }
 
     /**
@@ -370,33 +403,27 @@ export class SRPopupSettingTab extends PluginSettingTab {
      * Falls back to a plain textarea when the deck tree is unavailable
      * (SR still initializing).
      */
-    private displayDeckPicker(containerEl: HTMLElement): void {
+    private renderDeckPicker(setting: Setting, group: SettingGroup): (() => void) | void {
         const known = this.plugin.bridge.listDeckPaths();
         const listed = this.plugin.settings.deckFilterList;
 
         if (known.length === 0 && listed.length === 0) {
-            new Setting(containerEl)
-                .setName(t("settingsDeckFilterList"))
-                .setDesc(t("settingsDeckFilterListDesc"))
-                .addTextArea((text) => {
-                    text.setValue(this.plugin.settings.deckFilterList.join("\n")).onChange(
-                        async (v) => {
-                            this.plugin.settings.deckFilterList = normalizeDeckPaths(v.split("\n"));
-                            await this.plugin.saveSettings();
-                        },
-                    );
-                    text.inputEl.rows = 4;
-                    text.inputEl.placeholder = "flashcards/韓国語";
+            setting.addTextArea((text) => {
+                text.setValue(listed.join("\n")).onChange(async (v) => {
+                    this.plugin.settings.deckFilterList = normalizeDeckPaths(v.split("\n"));
+                    await this.plugin.saveSettings();
                 });
+                text.inputEl.rows = 4;
+                text.inputEl.placeholder = "Flashcards/韓国語";
+            });
             return;
         }
 
-        new Setting(containerEl)
-            .setName(t("settingsDeckFilterList"))
-            .setDesc(t("deckPickerIncludeDesc"))
-            .setHeading();
+        setting.setDesc(t("deckPickerIncludeDesc")).setHeading();
 
-        const wrap = containerEl.createDiv({ cls: "sr-popup-duallist" });
+        // The dual list is far wider than a row's control area, so it lives
+        // after the row and is removed again when that row is torn down.
+        const wrap = group.listEl.createDiv({ cls: "sr-popup-duallist" });
         const makeColumn = (labelKey: string): HTMLSelectElement => {
             const column = wrap.createDiv({ cls: "sr-popup-duallist-col" });
             column.createDiv({ cls: "sr-popup-duallist-label", text: t(labelKey) });
@@ -427,7 +454,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
             }
             this.plugin.settings.deckFilterList = next;
             await this.plugin.saveSettings();
-            this.display();
+            this.update();
         };
         const remove = async (): Promise<void> => {
             const selected = new Set(Array.from(right.selectedOptions).map((o) => o.value));
@@ -436,7 +463,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 (rule) => !selected.has(rule),
             );
             await this.plugin.saveSettings();
-            this.display();
+            this.update();
         };
 
         const addButton = buttons.createEl("button", { text: t("deckAdd") });
@@ -445,5 +472,9 @@ export class SRPopupSettingTab extends PluginSettingTab {
         removeButton.addEventListener("click", () => void remove());
         left.addEventListener("dblclick", () => void add());
         right.addEventListener("dblclick", () => void remove());
+
+        return () => {
+            wrap.remove();
+        };
     }
 }
