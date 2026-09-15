@@ -103,7 +103,15 @@ export class SRPopupSettingTab extends PluginSettingTab {
             },
             {
                 name: t("settingsStatus"),
-                render: (setting) => this.renderLiveDesc(setting, () => this.statusDesc(), 2_000),
+                // "notReady" is the only transient probe state; the others are
+                // settled, so polling stops as soon as one of them is reached.
+                render: (setting) =>
+                    this.renderLiveDesc(
+                        setting,
+                        () => this.statusDesc(),
+                        2_000,
+                        () => this.plugin.bridge.probe().status !== "notReady",
+                    ),
             },
             {
                 name: t("settingsNextPopup"),
@@ -287,9 +295,15 @@ export class SRPopupSettingTab extends PluginSettingTab {
     /**
      * Live description row: the definition's `desc` string is evaluated once by
      * the framework and goes stale, so dynamic rows render their text here and
-     * keep re-evaluating it while the tab is open.
+     * keep re-evaluating it while the tab is open. `until` ends the polling once
+     * the row reaches a state that no longer changes on its own.
      */
-    private renderLiveDesc(setting: Setting, desc: () => string, intervalMs: number): () => void {
+    private renderLiveDesc(
+        setting: Setting,
+        desc: () => string,
+        intervalMs: number,
+        until?: () => boolean,
+    ): () => void {
         let current: string | null = null;
         const apply = (): void => {
             const text = desc();
@@ -298,9 +312,15 @@ export class SRPopupSettingTab extends PluginSettingTab {
             setting.setDesc(text);
         };
         apply();
-        const timer = window.setInterval(apply, intervalMs);
+        let timer: number | null = null;
+        if (!until?.()) {
+            timer = window.setInterval(() => {
+                apply();
+                if (until?.() && timer !== null) window.clearInterval(timer);
+            }, intervalMs);
+        }
         return () => {
-            window.clearInterval(timer);
+            if (timer !== null) window.clearInterval(timer);
         };
     }
 
@@ -350,6 +370,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
             save: (v: number | null) => void,
         ): void => {
             setting.addText((text) => {
+                text.inputEl.addClass("sr-popup-size-input");
                 text.setPlaceholder(String(fallback));
                 text.setValue(value === null ? "" : String(value));
                 text.onChange(async (raw) => {

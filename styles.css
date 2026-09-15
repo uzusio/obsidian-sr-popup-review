@@ -38,3 +38,8 @@
 .sr-popup-separator {
     margin: 0 4px;
 }
+
+.sr-popup-size-input {
+    width: 64px;
+    text-align: center;
+}
