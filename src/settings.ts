@@ -101,8 +101,14 @@ export class SRPopupSettingTab extends PluginSettingTab {
                     options: { "-": t("languageDefault"), en: "English", ja: "日本語" },
                 },
             },
-            { name: t("settingsStatus"), desc: this.statusDesc() },
-            { name: t("settingsNextPopup"), desc: this.scheduleDesc() },
+            {
+                name: t("settingsStatus"),
+                render: (setting) => this.renderLiveDesc(setting, () => this.statusDesc(), 2_000),
+            },
+            {
+                name: t("settingsNextPopup"),
+                render: (setting) => this.renderLiveDesc(setting, () => this.scheduleDesc(), 30_000),
+            },
             {
                 name: t("settingsPaused"),
                 desc: t("settingsPausedDesc"),
@@ -276,6 +282,26 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 return;
             }
         }
+    }
+
+    /**
+     * Live description row: the definition's `desc` string is evaluated once by
+     * the framework and goes stale, so dynamic rows render their text here and
+     * keep re-evaluating it while the tab is open.
+     */
+    private renderLiveDesc(setting: Setting, desc: () => string, intervalMs: number): () => void {
+        let current: string | null = null;
+        const apply = (): void => {
+            const text = desc();
+            if (text === current) return; // keep the user's text selection intact
+            current = text;
+            setting.setDesc(text);
+        };
+        apply();
+        const timer = window.setInterval(apply, intervalMs);
+        return () => {
+            window.clearInterval(timer);
+        };
     }
 
     private statusDesc(): string {
