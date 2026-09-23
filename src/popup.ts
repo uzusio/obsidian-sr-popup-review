@@ -388,6 +388,7 @@ export class PopupController {
                 } catch (e) {
                     console.error("[sr-popup-review] failed to apply popup menu action", e);
                 }
+                this.markSessionEnd();
                 // The popup shows its own confirmation and closes itself; the
                 // next __nextEvent() call rejects then and ends the loop.
                 continue;
@@ -423,6 +424,7 @@ export class PopupController {
                 break;
             }
             this.diag(`review (${String(event)}) written in ${Date.now() - started} ms`);
+            this.markSessionEnd();
             if (gen !== this.generation) return;
             try {
                 await this.execInPopup("window.__showDone && window.__showDone()");
@@ -481,6 +483,22 @@ export class PopupController {
         } catch (e) {
             console.error("[sr-popup-review] failed to position popup", e);
         }
+    }
+
+    /**
+     * Reports the end of a visible session the moment the user's decision is
+     * final (rating written, pause/snooze applied), not when the window is torn
+     * down. The popup closes itself shortly after, but a self-closed window does
+     * not always reject the pending long poll, so finish() only ran when the
+     * reaper noticed — up to 30 s later. A scheduler tick inside that gap saw no
+     * open popup and a stale lastShownAt, and when the popup had been open
+     * longer than the interval it showed the next card seconds after the rating.
+     * Idempotent: finish() will not report the same session again.
+     */
+    private markSessionEnd(): void {
+        if (!this.wasShown) return;
+        this.wasShown = false;
+        this.onSessionEnd();
     }
 
     private finish(): void {
