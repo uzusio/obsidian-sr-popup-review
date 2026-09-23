@@ -79,9 +79,20 @@ const SAVING_STUCK_MS = 60_000;
  * quit main window whose onunload never ran left zombie popups behind).
  * The send interval lives in the (throttleable) main window, so the dead
  * threshold is generous.
+ * The main window's beforeunload hook (main.ts) is the primary path; this is
+ * the last line of defence when that hook never ran (crash, hung renderer).
  */
 const HEARTBEAT_SEND_MS = 30_000;
 const HEARTBEAT_DEAD_MS = 5 * 60_000;
+/**
+ * After the popup asks the plugin to dismiss it, how long it waits before
+ * closing itself. The plugin normally destroys the window within milliseconds
+ * (the long poll is not a timer, so it is not throttled); the fallback fires
+ * only when nobody answers — Obsidian's main window is gone or the plugin was
+ * unloaded without reaching us. The close button must never depend on the
+ * owner being alive.
+ */
+const DISMISS_SELF_CLOSE_MS = 1_000;
 
 const ACTION_TO_RESPONSE: Record<string, ReviewResponseValue> = {
     again: ReviewResponse.Again,
@@ -699,10 +710,17 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
     // Set once the user opens the note: they are reading it, so the popup must
     // never close under them (not even when "Show answer" re-arms the timer).
     var autoCloseDisabled = false;
+    // Asks the plugin to close this window, then closes it ourselves if the
+    // plugin does not answer (Obsidian gone): closing must never depend on
+    // the owner being alive.
+    function dismiss() {
+        emit("close");
+        setTimeout(function () { window.close(); }, ${DISMISS_SELF_CLOSE_MS});
+    }
     function armAutoClose() {
         if (!autoCloseMs || autoCloseDisabled) return;
         if (autoCloseTimer) clearTimeout(autoCloseTimer);
-        autoCloseTimer = setTimeout(function () { emit("close"); }, autoCloseMs);
+        autoCloseTimer = setTimeout(dismiss, autoCloseMs);
     }
     armAutoClose();
 
@@ -738,7 +756,7 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
     }
     function requestClose() {
         if (savingStuck) { window.close(); return; }
-        if (!chosen) emit("close");
+        if (!chosen) dismiss();
     }
 
     revealBtn.addEventListener("click", reveal);

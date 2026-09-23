@@ -51,6 +51,17 @@ export default class SRPopupPlugin extends Plugin {
                 heightRevealed: this.settings.popupHeightRevealed,
             }),
         );
+        // Quitting or reloading Obsidian tears this renderer down without
+        // running onunload, which left the popup behind — and because a live
+        // BrowserWindow blocks Electron's window-all-closed, it kept the whole
+        // Obsidian process alive with it. beforeunload still runs here, and
+        // @electron/remote calls are synchronous, so the popup can be destroyed
+        // before the window goes away.
+        this.registerDomEvent(window, "beforeunload", () => {
+            if (!this.popup.isOpen) return;
+            this.diag.log("main window unloading; closing popup");
+            this.popup.close();
+        });
         this.scheduler = new Scheduler(this);
 
         this.addSettingTab(new SRPopupSettingTab(this.app, this));
