@@ -587,9 +587,13 @@ body {
     font-family: inherit; font-size: 13px; cursor: pointer;
 }
 .menu button:hover { background: var(--btn-bg); }
-.content { flex: 1; overflow-y: auto; padding: 2px 16px 10px; }
+.content { flex: 1; overflow-y: auto; overflow-x: auto; padding: 2px 16px 10px; }
 .content img { max-width: 100%; }
 .content hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+/* Obsidian's renderer emits plain <table>s; without the app CSS they have no grid. */
+.content table { border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.content th, .content td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
+.content th { background: var(--btn-bg); font-weight: 600; }
 .q { font-size: 15px; }
 .footer { flex: none; padding: 10px 12px 12px; }
 button.action {
