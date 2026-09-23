@@ -29,6 +29,10 @@ interface BrowserWindowLike {
     setBounds?: (bounds: Bounds) => void;
     getBounds?: () => Bounds;
     webContents?: WebContentsLike;
+    isMinimized?: () => boolean;
+    restore?: () => void;
+    show?: () => void;
+    focus?: () => void;
 }
 
 type BrowserWindowCtor = new (options: Record<string, unknown>) => BrowserWindowLike;
@@ -38,6 +42,8 @@ interface ElectronRemoteLike {
     screen?: {
         getPrimaryDisplay?: () => { workArea?: Bounds } | undefined;
     };
+    /** In the main Obsidian renderer this is the main Obsidian window. */
+    getCurrentWindow?: () => BrowserWindowLike | undefined;
 }
 
 function getRemote(): ElectronRemoteLike | null {
@@ -305,6 +311,24 @@ export class PopupController {
     }
 
     /**
+     * Raises the main Obsidian window (restoring it when minimized), mirroring
+     * the Electron half of SR's own focusObsidianWindow(). The popup stays
+     * always-on-top, so it remains visible above the raised window.
+     */
+    private focusMainWindow(): void {
+        try {
+            const main = getRemote()?.getCurrentWindow?.();
+            if (!main) return;
+            if (main.isMinimized?.() === true) main.restore?.();
+            main.show?.();
+            main.focus?.();
+            main.moveTop?.();
+        } catch (e) {
+            console.error("[sr-popup-review] failed to focus the Obsidian window", e);
+        }
+    }
+
+    /**
      * Long-poll loop: each iteration blocks until the popup emits an event
      * ("revealed", a rating action, or "close"). The executeJavaScript promise
      * rejects when the window is closed/destroyed, which also ends the loop.
@@ -334,6 +358,23 @@ export class PopupController {
             if (event === "close") {
                 this.diag("popup dismissed (nothing written)");
                 break;
+            }
+            if (event === "open-note") {
+                this.diag("popup menu: open note requested");
+                const session = this.session;
+                let opened = false;
+                try {
+                    opened = session?.openNote ? await session.openNote() : false;
+                } catch (e) {
+                    console.error("[sr-popup-review] failed to open the card's note", e);
+                }
+                if (opened) {
+                    this.focusMainWindow();
+                    this.diag("note opened in Obsidian; popup stays open");
+                } else {
+                    this.diag("note could not be opened (file missing or source unknown)");
+                }
+                continue; // the popup stays open; the user rates afterwards
             }
             if (event === "pause" || (typeof event === "string" && event.startsWith("snooze:"))) {
                 const minutes = event === "pause" ? undefined : Number(event.slice(7));
@@ -490,6 +531,12 @@ export class PopupController {
         );
         const labels = session.buttonLabels;
         const autoCloseMs = Math.max(0, Math.round(autoCloseSeconds * 1000));
+        // Offered only when the bridge could identify the card's source note.
+        // No data-action: this item must not run the pause/snooze handler.
+        const openNoteItem =
+            session.openNote !== null
+                ? `\n    <button id="openNoteBtn">${escapeHtml(t("menuOpenNote"))}</button>`
+                : "";
 
         return `<!doctype html>
 <html>
@@ -530,7 +577,9 @@ body {
 .menu {
     position: fixed; top: 32px; right: 8px; z-index: 10;
     background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); min-width: 180px; overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25); min-width: 180px;
+    /* Five items no longer fit a popup shrunk to MIN_HEIGHT: scroll instead of clipping. */
+    max-height: calc(100vh - 40px); overflow-x: hidden; overflow-y: auto;
 }
 .menu button {
     display: block; width: 100%; text-align: left; padding: 8px 12px;
@@ -573,7 +622,7 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
         <button class="closebtn" id="closeBtn" title="Esc">✕</button>
     </span>
 </div>
-<div id="menu" class="menu" hidden>
+<div id="menu" class="menu" hidden>${openNoteItem}
     <button data-action="pause">${escapeHtml(t("menuPause"))}</button>
     <button data-action="snooze:30">${escapeHtml(t("menuSnooze30"))}</button>
     <button data-action="snooze:60">${escapeHtml(t("menuSnooze60"))}</button>
@@ -625,8 +674,11 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
     // throttled, unlike the minimized main Obsidian window).
     var autoCloseMs = ${autoCloseMs};
     var autoCloseTimer = null;
+    // Set once the user opens the note: they are reading it, so the popup must
+    // never close under them (not even when "Show answer" re-arms the timer).
+    var autoCloseDisabled = false;
     function armAutoClose() {
-        if (!autoCloseMs) return;
+        if (!autoCloseMs || autoCloseDisabled) return;
         if (autoCloseTimer) clearTimeout(autoCloseTimer);
         autoCloseTimer = setTimeout(function () { emit("close"); }, autoCloseMs);
     }
@@ -670,8 +722,8 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
     revealBtn.addEventListener("click", reveal);
     document.getElementById("closeBtn").addEventListener("click", requestClose);
 
-    // Options menu (pause / snooze). The confirmation overlay and self-close
-    // live here so they work even if the plugin side is throttled.
+    // Options menu (open note / pause / snooze). The confirmation overlay and
+    // self-close live here so they work even if the plugin side is throttled.
     var menu = document.getElementById("menu");
     var menuBtn = document.getElementById("menuBtn");
     menuBtn.addEventListener("click", function (e) {
@@ -681,7 +733,7 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
     document.addEventListener("click", function (e) {
         if (!menu.hidden && !menu.contains(e.target) && e.target !== menuBtn) menu.hidden = true;
     });
-    Array.prototype.forEach.call(menu.querySelectorAll("button"), function (b) {
+    Array.prototype.forEach.call(menu.querySelectorAll("button[data-action]"), function (b) {
         b.addEventListener("click", function () {
             if (chosen) return;
             menu.hidden = true;
@@ -693,6 +745,19 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
             setTimeout(function () { window.close(); }, 700);
         });
     });
+    // "Open note" is the odd one out: no confirmation overlay, no self-close —
+    // the popup stays up so the user can rate the card after reading the note.
+    var openNoteBtn = document.getElementById("openNoteBtn");
+    if (openNoteBtn) {
+        openNoteBtn.addEventListener("click", function () {
+            if (chosen) return;
+            menu.hidden = true;
+            // The user is now reading the note; never auto-close under them.
+            autoCloseDisabled = true;
+            if (autoCloseTimer) clearTimeout(autoCloseTimer);
+            emit("open-note");
+        });
+    }
     Array.prototype.forEach.call(ratings.querySelectorAll(".action"), function (b) {
         byAction[b.getAttribute("data-action")] = b;
         b.addEventListener("click", function () { choose(b.getAttribute("data-action")); });

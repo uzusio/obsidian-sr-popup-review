@@ -1,4 +1,4 @@
-import { App } from "obsidian";
+import { App, MarkdownView, TFile } from "obsidian";
 
 const SR_PLUGIN_ID = "obsidian-spaced-repetition";
 
@@ -34,10 +34,31 @@ interface SRDeck {
     getDistinctRepItemCount?: (repItemType: number, includeSubdecks: boolean) => number;
 }
 
+interface SRQuestionText {
+    obsidianBlockId?: unknown;
+}
+
+/** SR's ISRFile (SrTFile wraps a TFile; `path` is the vault-relative path). */
+interface SRNoteFile {
+    path?: unknown;
+}
+
+interface SRNote {
+    file?: SRNoteFile;
+}
+
+interface SRQuestion {
+    note?: SRNote;
+    /** Getter over parsedQuestionInfo.firstLineNum — may throw. */
+    lineNo?: unknown;
+    questionText?: SRQuestionText;
+}
+
 interface SRCard {
     front?: unknown;
     back?: unknown;
     hasSchedule?: unknown;
+    question?: SRQuestion;
 }
 
 interface SRSequencer {
@@ -126,6 +147,13 @@ function asString(value: unknown, fallback: string): string {
     return typeof value === "string" ? value : fallback;
 }
 
+/** Where a card came from, resolved from SR's internals while the session is built. */
+interface NoteSource {
+    path: string;
+    line: number;
+    blockId: string | null;
+}
+
 export interface ReviewSession {
     /** Markdown of the question side (cloze deletions already masked by SR's parser). */
     front: string;
@@ -139,6 +167,10 @@ export interface ReviewSession {
     buttonLabels: { again: string; hard: string; good: string; easy: string };
     /** Writes the review through SR's own pipeline (identical to pressing a button in its modal). */
     rate(response: ReviewResponseValue): Promise<void>;
+    /** Opens the card's source note in Obsidian at the card's line (mirrors SR's own
+     * "open note" action). null when the note could not be identified from SR's internals,
+     * in which case the popup hides the menu item. Resolves false if the file no longer exists. */
+    openNote: (() => Promise<boolean>) | null;
 }
 
 export type ProbeStatus = "ok" | "missing" | "notReady" | "incompatible";
@@ -336,6 +368,9 @@ export class SRBridge {
         const card = sequencer.currentCard;
         if (!card || typeof card.front !== "string" || typeof card.back !== "string") return null;
         const isNewCard = card.hasSchedule !== true;
+        // Resolved now, while the sequencer still points at this card: the popup
+        // may ask for it much later. null = the menu item is not offered at all.
+        const noteSource = this.resolveNoteSource(card);
 
         let dueCount = 0;
         let newCount = 0;
@@ -377,7 +412,65 @@ export class SRBridge {
             rate: async (response: ReviewResponseValue) => {
                 await processReview.call(boundSequencer, response);
             },
+            openNote: noteSource ? () => this.openNoteAt(noteSource) : null,
         };
+    }
+
+    /**
+     * The card's source note, line and block id, read from SR's internals
+     * (Question.note.file.path / Question.lineNo / QuestionText.obsidianBlockId,
+     * the same members SR's own "jump to card" action uses). Returns null when
+     * anything is missing or a getter throws — the feature then stays hidden.
+     */
+    private resolveNoteSource(card: SRCard): NoteSource | null {
+        try {
+            const question = card.question;
+            if (!question) return null;
+            const path = question.note?.file?.path;
+            if (typeof path !== "string" || path.length === 0) return null;
+            const rawLine = question.lineNo;
+            // SR itself uses Math.max(0, lineNo ?? 0).
+            const line = typeof rawLine === "number" && rawLine >= 0 ? rawLine : 0;
+            const rawBlockId = question.questionText?.obsidianBlockId;
+            const blockId =
+                typeof rawBlockId === "string" && rawBlockId.length > 0 ? rawBlockId : null;
+            return { path, line, blockId };
+        } catch {
+            // Question.lineNo is a getter; an incompatible SR build may throw.
+            return null;
+        }
+    }
+
+    /**
+     * Opens the note in the main Obsidian window, mirroring SR's own
+     * _jumpToCurrentCard(). Public Obsidian API only — no SR internals here.
+     * The TFile is looked up from the path at open time (rather than being held
+     * from the sync), so a renamed or deleted note yields false instead of
+     * reviving a stale file handle. Returns false when the note is gone.
+     */
+    private async openNoteAt(source: NoteSource): Promise<boolean> {
+        const file = this.app.vault.getAbstractFileByPath(source.path);
+        if (!(file instanceof TFile)) return false;
+        const ws = this.app.workspace;
+        if (source.blockId) {
+            await ws.openLinkText(`${source.path}#${source.blockId}`, source.path, false);
+            return true;
+        }
+        const existing = ws
+            .getLeavesOfType("markdown")
+            .find((l) => l.view instanceof MarkdownView && l.view.file?.path === source.path);
+        const leaf = existing ?? ws.getLeaf("tab");
+        await leaf.openFile(file, { eState: { line: source.line } });
+        if (existing) ws.setActiveLeaf(existing);
+        const view = leaf.view;
+        if (view instanceof MarkdownView) {
+            view.editor.setCursor({ line: source.line, ch: 0 });
+            view.editor.scrollIntoView({
+                from: { line: source.line, ch: 0 },
+                to: { line: source.line, ch: 0 },
+            });
+        }
+        return true;
     }
 
     /**
