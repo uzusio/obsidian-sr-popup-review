@@ -44,7 +44,7 @@ Tested with Spaced Repetition **v1.15.4**.
 | Click **⋯** (next to ✕) | Options menu: open the card's source note at its line (the popup stays open), pause until resumed, or snooze popups for 30 min / 1 h / 3 h |
 | Drag the header | Moves the popup |
 
-The rating buttons use the labels you configured in the Spaced Repetition plugin. Card text is rendered as Markdown, and cloze deletions are masked exactly as in the normal review modal.
+The rating buttons use the labels you configured in the Spaced Repetition plugin. When Spaced Repetition's "Show next review time in the review buttons" setting is on, each button also shows on a second line the interval that rating would schedule (e.g. `(3d)`). Card text is rendered as Markdown, and cloze deletions are masked exactly as in the normal review modal.
 
 You can also open a popup at any time with the command **"Show review popup now"** (via the command palette).
 

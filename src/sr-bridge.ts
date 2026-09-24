@@ -21,6 +21,7 @@ interface SRSettingsLike {
     flashcardHardText?: unknown;
     flashcardGoodText?: unknown;
     flashcardEasyText?: unknown;
+    showIntervalInReviewButtons?: unknown;
 }
 
 interface SRTopicPath {
@@ -61,6 +62,12 @@ interface SRCard {
     question?: SRQuestion;
 }
 
+/** SR's RepItemScheduleInfo (OSR or FSRS): interval in days; dueDateAsUnix is a getter. */
+interface SRScheduleInfoLike {
+    interval?: unknown;
+    dueDateAsUnix?: unknown;
+}
+
 interface SRSequencer {
     hasCurrentCard?: unknown;
     currentCard?: SRCard | null;
@@ -69,6 +76,8 @@ interface SRSequencer {
     skipCurrentCard?: () => void;
     /** Same API the SR modal uses when the user picks a deck from the deck list. */
     setCurrentDeck?: (topicPath: SRTopicPath) => void;
+    /** Pure preview of the schedule a rating would produce (what SR's own buttons show). */
+    determineCardSchedule?: (response: number, card: SRCard) => SRScheduleInfoLike | null | undefined;
 }
 
 interface SRReviewQueueLoader {
@@ -147,11 +156,43 @@ function asString(value: unknown, fallback: string): string {
     return typeof value === "string" ? value : fallback;
 }
 
+/** Port of SR's formatScheduleInterval() thresholds; null when the schedule is unusable. */
+function previewFromSchedule(
+    schedule: SRScheduleInfoLike | null | undefined,
+    now: number,
+): IntervalPreview | null {
+    const interval = schedule?.interval;
+    if (typeof interval !== "number" || !Number.isFinite(interval)) return null;
+    const dueUnix = schedule?.dueDateAsUnix;
+    if (interval >= 1 || typeof dueUnix !== "number") {
+        const months = Math.round(interval / 3.04375) / 10;
+        const years = Math.round(interval / 36.525) / 10;
+        if (months < 1) return { unit: "days", value: interval };
+        if (years < 1) return { unit: "months", value: months };
+        return { unit: "years", value: years };
+    }
+    const totalMinutes = Math.max(1, Math.ceil(Math.max(0, dueUnix - now) / 60_000));
+    if (totalMinutes < 60) return { unit: "minutes", value: totalMinutes };
+    return { unit: "hours", value: Math.max(1, Math.ceil(totalMinutes / 60)) };
+}
+
 /** Where a card came from, resolved from SR's internals while the session is built. */
 interface NoteSource {
     path: string;
     line: number;
     blockId: string | null;
+}
+
+export type RatingKey = "again" | "hard" | "good" | "easy";
+
+/**
+ * Next-interval preview for one rating button, mirroring SR's
+ * formatScheduleInterval(): intervals of a day or more are shown in days /
+ * months / years, sub-day FSRS learning steps in minutes / hours.
+ */
+export interface IntervalPreview {
+    unit: "minutes" | "hours" | "days" | "months" | "years";
+    value: number;
 }
 
 export interface ReviewSession {
@@ -165,6 +206,12 @@ export interface ReviewSession {
     isNewCard: boolean;
     /** Button labels as configured in the SR plugin's settings. */
     buttonLabels: { again: string; hard: string; good: string; easy: string };
+    /**
+     * What each rating would schedule next, for the second line of the buttons.
+     * null when SR's "show next review time" setting is off or the preview is
+     * unavailable (incompatible internals) — the popup then draws single-line buttons.
+     */
+    intervals: Record<RatingKey, IntervalPreview | null> | null;
     /** Writes the review through SR's own pipeline (identical to pressing a button in its modal). */
     rate(response: ReviewResponseValue): Promise<void>;
     /** Opens the card's source note in Obsidian at the card's line (mirrors SR's own
@@ -399,6 +446,7 @@ export class SRBridge {
             good: asString(srSettings?.flashcardGoodText, "Good"),
             easy: asString(srSettings?.flashcardEasyText, "Easy"),
         };
+        const intervals = this.previewIntervals(sequencer, card, srSettings);
 
         const boundSequencer = sequencer;
         return {
@@ -409,11 +457,45 @@ export class SRBridge {
             newCount,
             isNewCard,
             buttonLabels,
+            intervals,
             rate: async (response: ReviewResponseValue) => {
                 await processReview.call(boundSequencer, response);
             },
             openNote: noteSource ? () => this.openNoteAt(noteSource) : null,
         };
+    }
+
+    /**
+     * Asks SR what each rating would schedule, exactly as its own review view
+     * does before drawing the buttons (4 pure calculations, nothing written).
+     * Honours SR's "show next review time in the review buttons" setting.
+     * Returns null when the preview is unavailable so the popup falls back to
+     * single-line buttons instead of showing an error.
+     */
+    private previewIntervals(
+        sequencer: SRSequencer,
+        card: SRCard,
+        srSettings: SRSettingsLike | undefined,
+    ): Record<RatingKey, IntervalPreview | null> | null {
+        if (srSettings?.showIntervalInReviewButtons === false) return null;
+        if (typeof sequencer.determineCardSchedule !== "function") return null;
+        const now = Date.now();
+        const preview = (response: ReviewResponseValue): IntervalPreview | null => {
+            try {
+                // Called as a method (not .call) so the typed return value survives lint.
+                return previewFromSchedule(sequencer.determineCardSchedule?.(response, card), now);
+            } catch {
+                // dueDateAsUnix is a getter; an incompatible SR build may throw.
+                return null;
+            }
+        };
+        const result = {
+            again: preview(ReviewResponse.Again),
+            hard: preview(ReviewResponse.Hard),
+            good: preview(ReviewResponse.Good),
+            easy: preview(ReviewResponse.Easy),
+        };
+        return Object.values(result).some((p) => p !== null) ? result : null;
     }
 
     /**

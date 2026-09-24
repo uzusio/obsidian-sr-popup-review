@@ -1,5 +1,5 @@
 import { App, Component, MarkdownRenderer, Notice } from "obsidian";
-import { ReviewResponse, ReviewResponseValue, ReviewSession } from "./sr-bridge";
+import { IntervalPreview, RatingKey, ReviewResponse, ReviewResponseValue, ReviewSession } from "./sr-bridge";
 import { t } from "./i18n";
 
 // ---------------------------------------------------------------------------
@@ -107,6 +107,18 @@ function escapeHtml(s: string): string {
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
+}
+
+const INTERVAL_UNIT_KEY: Record<IntervalPreview["unit"], string> = {
+    minutes: "ivlMinutes",
+    hours: "ivlHours",
+    days: "ivlDays",
+    months: "ivlMonths",
+    years: "ivlYears",
+};
+
+function formatInterval(preview: IntervalPreview): string {
+    return t(INTERVAL_UNIT_KEY[preview.unit], { n: preview.value });
 }
 
 /**
@@ -566,6 +578,16 @@ export class PopupController {
             session.openNote !== null
                 ? `\n    <button id="openNoteBtn">${escapeHtml(t("menuOpenNote"))}</button>`
                 : "";
+        const intervals = session.intervals;
+        // Two-line buttons only when SR could preview the intervals; otherwise
+        // the buttons stay exactly as before.
+        const ratingButton = (key: RatingKey, label: string): string => {
+            const preview = intervals?.[key] ?? null;
+            const text = escapeHtml(label);
+            if (!intervals) return `<button class="action ${key}" data-action="${key}">${text}</button>`;
+            const ivl = preview ? `(${escapeHtml(formatInterval(preview))})` : "";
+            return `<button class="action ${key}" data-action="${key}"><span>${text}</span><span class="ivl">${ivl}</span></button>`;
+        };
 
         return `<!doctype html>
 <html>
@@ -640,6 +662,11 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
 #ratings .hard { color: var(--hard); }
 #ratings .good { color: var(--good); }
 #ratings .easy { color: var(--easy); }
+#ratings.two-line .action {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 1px; padding: 5px 0 4px; line-height: 1.25;
+}
+#ratings.two-line .ivl { font-size: 11px; font-weight: 400; color: var(--muted); min-height: 14px; }
 #saving { margin-top: 8px; font-size: 12px; color: var(--muted); text-align: center; }
 .done {
     position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -667,11 +694,11 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
 </div>
 <div class="footer">
     <button class="action" id="revealBtn">▼ ${escapeHtml(t("showAnswer"))}</button>
-    <div id="ratings" hidden>
-        <button class="action again" data-action="again">${escapeHtml(labels.again)}</button>
-        <button class="action hard" data-action="hard">${escapeHtml(labels.hard)}</button>
-        <button class="action good" data-action="good">${escapeHtml(labels.good)}</button>
-        <button class="action easy" data-action="easy">${escapeHtml(labels.easy)}</button>
+    <div id="ratings"${intervals ? ' class="two-line"' : ""} hidden>
+        ${ratingButton("again", labels.again)}
+        ${ratingButton("hard", labels.hard)}
+        ${ratingButton("good", labels.good)}
+        ${ratingButton("easy", labels.easy)}
     </div>
     <div id="saving" hidden>${escapeHtml(t("saving"))}</div>
 </div>
