@@ -34,6 +34,7 @@ const en: Strings = {
     popupFailed:
         "Popup Review for Spaced Repetition: could not open the popup window. See the developer console for details.",
     commandShowNow: "Show review popup now",
+    popupPreparing: "A review popup is being prepared…",
     commandTogglePause: "Toggle popup pause",
     statusBarPause: "Pause review popups",
     statusBarResume: "Resume review popups (paused)",
@@ -137,6 +138,7 @@ const ja: Strings = {
     popupFailed:
         "Popup Review for Spaced Repetition: ポップアップウィンドウを開けませんでした。詳細は開発者コンソールを確認してください。",
     commandShowNow: "今すぐレビューポップアップを表示",
+    popupPreparing: "レビューポップアップを準備中です…",
     commandTogglePause: "ポップアップの一時停止を切り替え",
     statusBarPause: "レビューポップアップを一時停止",
     statusBarResume: "レビューポップアップを再開（一時停止中）",

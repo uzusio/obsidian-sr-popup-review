@@ -75,6 +75,13 @@ export default class SRPopupPlugin extends Plugin {
             name: t("commandTogglePause"),
             callback: () => void this.togglePaused(),
         });
+        const showNowStatusItem = this.addStatusBarItem();
+        showNowStatusItem.addClass("mod-clickable");
+        showNowStatusItem.onClickEvent(() => void this.scheduler.tick("manual"));
+        const showNowIconEl = showNowStatusItem.createSpan({ cls: "status-bar-item-icon" });
+        setIcon(showNowIconEl, "layers");
+        showNowStatusItem.setAttribute("aria-label", t("commandShowNow"));
+        showNowStatusItem.setAttribute("data-tooltip-position", "top");
         const statusBarItem = this.addStatusBarItem();
         statusBarItem.addClass("mod-clickable");
         statusBarItem.onClickEvent(() => void this.togglePaused());

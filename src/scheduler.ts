@@ -62,6 +62,7 @@ export class Scheduler {
                 this.plugin.diag.log(
                     `tick(${mode}): skipped — previous tick still running (${Math.round((Date.now() - this.tickingSince) / 1000)}s)`,
                 );
+                if (mode === "manual") new Notice(t("popupPreparing"));
                 return;
             }
             // A previous tick never returned (hung SR sync or popup creation).
@@ -111,7 +112,12 @@ export class Scheduler {
         }
         if (this.plugin.popup.isOpen) {
             if (await this.plugin.popup.ensureAlive()) {
-                log("a popup is already open");
+                if (mode === "manual") {
+                    this.plugin.popup.bringToFront();
+                    log("a popup is already open; brought it to front");
+                } else {
+                    log("a popup is already open");
+                }
                 return;
             }
             log("cleaned up an unresponsive popup window");

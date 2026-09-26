@@ -290,6 +290,19 @@ export class PopupController {
         this.finish();
     }
 
+    /** Re-raises an open popup (e.g. when the user asks for one while it is
+     * hidden behind other always-on-top windows). No-op when closed. */
+    bringToFront(): void {
+        if (!this.isOpen) return;
+        try {
+            this.win?.showInactive?.();
+            this.win?.setAlwaysOnTop?.(true, "screen-saver");
+            this.win?.moveTop?.();
+        } catch (e) {
+            this.diag(`failed to raise popup: ${String(e)}`);
+        }
+    }
+
     /**
      * True if the popup window answers a trivial script call within a few
      * seconds. A window whose renderer died (system sleep, the OS reclaiming
