@@ -1,5 +1,5 @@
-import { App, PluginSettingTab, moment } from "obsidian";
-import type { Setting, SettingDefinitionItem, SettingGroup } from "obsidian";
+import { App, Platform, PluginSettingTab, moment } from "obsidian";
+import type { ButtonComponent, ExtraButtonComponent, Setting, SettingDefinitionItem, SettingGroup } from "obsidian";
 import type SRPopupPlugin from "./main";
 import { normalizeDeckPaths } from "./sr-bridge";
 import { isInQuietHours, quietHoursEndDate } from "./scheduler";
@@ -10,6 +10,7 @@ import {
     MIN_HEIGHT,
     MIN_WIDTH,
 } from "./popup";
+import type { ShortcutResult } from "./global-shortcut";
 import { setLocaleOverride, t } from "./i18n";
 
 export interface SRPopupSettings {
@@ -17,6 +18,8 @@ export interface SRPopupSettings {
     language: "-" | "en" | "ja";
     /** Pause switch: no automatic popups while true (manual command still works). */
     paused: boolean;
+    /** Electron accelerator for the system-wide show-popup shortcut; "" = off. */
+    globalShortcut: string;
     intervalMinutes: number;
     quietHoursEnabled: boolean;
     quietHoursStart: string;
@@ -49,6 +52,7 @@ export interface SRPopupSettings {
 export const DEFAULT_SETTINGS: SRPopupSettings = {
     language: "-",
     paused: false,
+    globalShortcut: "",
     intervalMinutes: 120,
     quietHoursEnabled: true,
     quietHoursStart: "01:00",
@@ -73,6 +77,90 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
 
 const HHMM_RE = /^(\d{1,2}):(\d{2})$/;
 const MIN_INTERVAL_MINUTES = 5;
+
+// ---------------------------------------------------------------------------
+// Global-shortcut key recorder: KeyboardEvent.code -> Electron accelerator key
+// name, and the reverse (accelerator -> display string). Data-driven so the
+// mapping is a lookup, not scattered conditionals.
+// ---------------------------------------------------------------------------
+
+const MODIFIER_CODES = new Set([
+    "ControlLeft",
+    "ControlRight",
+    "AltLeft",
+    "AltRight",
+    "ShiftLeft",
+    "ShiftRight",
+    "MetaLeft",
+    "MetaRight",
+]);
+
+/** Fixed (non-alphanumeric, non-F-key, non-numpad) code -> accelerator key name. */
+const CODE_TO_KEY: Record<string, string> = {
+    Space: "Space",
+    Enter: "Enter",
+    Tab: "Tab",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    Insert: "Insert",
+    Home: "Home",
+    End: "End",
+    PageUp: "PageUp",
+    PageDown: "PageDown",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    Escape: "Escape",
+    Minus: "-",
+    Equal: "=",
+    BracketLeft: "[",
+    BracketRight: "]",
+    Backslash: "\\",
+    Semicolon: ";",
+    Quote: "'",
+    Comma: ",",
+    Period: ".",
+    Slash: "/",
+    Backquote: "`",
+};
+
+const KEY_LETTER_RE = /^Key([A-Z])$/;
+const DIGIT_RE = /^Digit([0-9])$/;
+const F_KEY_RE = /^F(?:[1-9]|1\d|2[0-4])$/;
+const NUMPAD_RE = /^Numpad([0-9])$/;
+
+/** Converts a KeyboardEvent.code into the key part of an Electron accelerator,
+ * or null when the code has no accelerator equivalent (recording continues). */
+function codeToAcceleratorKey(code: string): string | null {
+    const letter = KEY_LETTER_RE.exec(code);
+    if (letter) return letter[1];
+    const digit = DIGIT_RE.exec(code);
+    if (digit) return digit[1];
+    if (F_KEY_RE.test(code)) return code;
+    const numpad = NUMPAD_RE.exec(code);
+    if (numpad) return `num${numpad[1]}`;
+    return CODE_TO_KEY[code] ?? null;
+}
+
+/** Builds an Electron accelerator string in the fixed modifier order. */
+function buildAccelerator(mods: { ctrl: boolean; alt: boolean; shift: boolean; meta: boolean }, key: string): string {
+    const parts: string[] = [];
+    if (mods.ctrl) parts.push("Ctrl");
+    if (mods.alt) parts.push("Alt");
+    if (mods.shift) parts.push("Shift");
+    if (mods.meta) parts.push("Super");
+    parts.push(key);
+    return parts.join("+");
+}
+
+/** "Super" displays as the platform's own modifier name; every other part is shown as-is. */
+function formatAccelerator(accelerator: string): string {
+    return accelerator
+        .split("+")
+        .map((part) => (part === "Super" ? (Platform.isMacOS ? "Cmd" : "Win") : part))
+        .join(" + ");
+}
 
 /**
  * Declarative settings tab (Obsidian 1.13+). Every row is a definition so it
@@ -121,6 +209,11 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 name: t("settingsPaused"),
                 desc: t("settingsPausedDesc"),
                 control: { type: "toggle", key: "paused" },
+            },
+            {
+                name: t("settingsGlobalShortcut"),
+                desc: t("settingsGlobalShortcutDesc"),
+                render: (setting) => this.renderGlobalShortcut(setting),
             },
             {
                 name: t("settingsInterval"),
@@ -321,6 +414,184 @@ export class SRPopupSettingTab extends PluginSettingTab {
         }
         return () => {
             if (timer !== null) window.clearInterval(timer);
+        };
+    }
+
+    /**
+     * System-wide shortcut recorder: a button that, once clicked, captures the
+     * next key combination pressed anywhere (not just while focused) and turns
+     * it into an Electron accelerator. While recording, the plugin's own OS-level
+     * registration is suspended (globalShortcut.suspend()) so its keys reach this
+     * page's keydown handler instead of being swallowed by the OS shortcut.
+     */
+    private renderGlobalShortcut(setting: Setting): () => void {
+        const statusEl = setting.descEl.createDiv({ cls: "sr-popup-shortcut-status" });
+        let mainButton!: ButtonComponent;
+        let clearButton!: ExtraButtonComponent;
+        let recording: { cancel: () => void } | null = null;
+
+        const clearStatus = (): void => {
+            statusEl.hidden = true;
+            statusEl.setText("");
+            statusEl.removeClass("mod-warning");
+        };
+        const showStatus = (text: string, warning: boolean): void => {
+            statusEl.setText(text);
+            statusEl.hidden = false;
+            statusEl.toggleClass("mod-warning", warning);
+        };
+        const messageForFailure = (state: ShortcutResult, keyDisplay: string): string | null => {
+            switch (state) {
+                case "conflict":
+                    return t("shortcutConflict", { key: keyDisplay });
+                case "invalid":
+                    return t("shortcutInvalid", { key: keyDisplay });
+                case "unavailable":
+                    return t("shortcutUnavailable");
+                default:
+                    return null;
+            }
+        };
+        /** Shows the persisted registration problem for the saved shortcut, if any. */
+        const refreshPersistedStatus = (): void => {
+            const accel = this.plugin.settings.globalShortcut;
+            const state = this.plugin.globalShortcutState;
+            const msg = accel !== "" && state !== "ok" ? messageForFailure(state, formatAccelerator(accel)) : null;
+            if (msg) showStatus(msg, true);
+            else clearStatus();
+        };
+        const idleDisplay = (): string => {
+            const accel = this.plugin.settings.globalShortcut;
+            return accel === "" ? t("shortcutNotSet") : formatAccelerator(accel);
+        };
+        const refreshIdle = (): void => {
+            mainButton.buttonEl.removeClass("mod-cta");
+            mainButton.setButtonText(idleDisplay());
+            clearButton.setDisabled(this.plugin.settings.globalShortcut === "");
+        };
+
+        const startRecording = (): void => {
+            if (recording) return;
+            this.plugin.globalShortcut.suspend();
+            mainButton.buttonEl.addClass("mod-cta");
+            mainButton.setButtonText(t("shortcutRecording"));
+            clearStatus();
+
+            const held = { ctrl: false, alt: false, shift: false, meta: false };
+            const showHeldModifiers = (): void => {
+                const parts: string[] = [];
+                if (held.ctrl) parts.push("Ctrl");
+                if (held.alt) parts.push("Alt");
+                if (held.shift) parts.push("Shift");
+                if (held.meta) parts.push(Platform.isMacOS ? "Cmd" : "Win");
+                mainButton.setButtonText(parts.length ? `${parts.join(" + ")} + …` : t("shortcutRecording"));
+            };
+
+            const finish = (accel: string): void => {
+                stop();
+                // End the recording UI state immediately; the accelerator itself
+                // (idle text, clear-button enabled state) updates once the async
+                // register call below settles.
+                mainButton.buttonEl.removeClass("mod-cta");
+                void (async (): Promise<void> => {
+                    const result = await this.plugin.setGlobalShortcut(accel);
+                    refreshIdle();
+                    const display = formatAccelerator(accel);
+                    if (result === "ok") {
+                        showStatus(t("shortcutSaved", { key: display }), false);
+                    } else {
+                        const msg = messageForFailure(result, display);
+                        if (msg) showStatus(msg, true);
+                    }
+                })();
+            };
+            const cancel = (): void => {
+                stop();
+                this.plugin.globalShortcut.resume();
+                refreshIdle();
+                refreshPersistedStatus();
+            };
+
+            const onKeydown = (e: KeyboardEvent): void => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (e.isComposing || e.key === "Process") return;
+
+                if (MODIFIER_CODES.has(e.code)) {
+                    held.ctrl = e.ctrlKey;
+                    held.alt = e.altKey;
+                    held.shift = e.shiftKey;
+                    held.meta = e.metaKey;
+                    showHeldModifiers();
+                    return;
+                }
+                if (e.code === "Escape" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    cancel();
+                    return;
+                }
+                const key = codeToAcceleratorKey(e.code);
+                if (key === null) {
+                    showStatus(t("shortcutUnsupportedKey"), true);
+                    return;
+                }
+                if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                    showStatus(t("shortcutNeedModifier"), true);
+                    return;
+                }
+                finish(
+                    buildAccelerator(
+                        { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey },
+                        key,
+                    ),
+                );
+            };
+            // Releasing a modifier before the final key must drop it from the live preview.
+            const onKeyup = (e: KeyboardEvent): void => {
+                if (!MODIFIER_CODES.has(e.code)) return;
+                held.ctrl = e.ctrlKey;
+                held.alt = e.altKey;
+                held.shift = e.shiftKey;
+                held.meta = e.metaKey;
+                showHeldModifiers();
+            };
+            const onBlur = (): void => cancel();
+
+            window.addEventListener("keydown", onKeydown, { capture: true });
+            window.addEventListener("keyup", onKeyup, { capture: true });
+            mainButton.buttonEl.addEventListener("blur", onBlur);
+            const stop = (): void => {
+                window.removeEventListener("keydown", onKeydown, { capture: true });
+                window.removeEventListener("keyup", onKeyup, { capture: true });
+                mainButton.buttonEl.removeEventListener("blur", onBlur);
+                recording = null;
+            };
+            recording = { cancel };
+        };
+
+        setting.addButton((btn) => {
+            mainButton = btn;
+            btn.buttonEl.addClass("sr-popup-shortcut-button");
+            btn.setButtonText(idleDisplay());
+            btn.onClick(() => startRecording());
+        });
+        setting.addExtraButton((btn) => {
+            clearButton = btn;
+            btn.setIcon("x");
+            btn.setTooltip(t("shortcutClear"));
+            btn.setDisabled(this.plugin.settings.globalShortcut === "");
+            btn.onClick(() => {
+                void (async (): Promise<void> => {
+                    await this.plugin.setGlobalShortcut("");
+                    refreshIdle();
+                    clearStatus();
+                })();
+            });
+        });
+
+        refreshPersistedStatus();
+
+        return () => {
+            if (recording) recording.cancel();
         };
     }
 

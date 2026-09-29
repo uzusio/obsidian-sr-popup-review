@@ -44,6 +44,19 @@ const en: Strings = {
     settingsPaused: "Pause popups",
     settingsPausedDesc:
         "Temporarily stop automatic popups. The bell icon in the status bar (bottom right) and the toggle-pause command flip this too. The manual show-popup-now command still works while paused.",
+    settingsGlobalShortcut: "Global shortcut",
+    settingsGlobalShortcutDesc:
+        "Show a review popup with this key combination even while Obsidian is in the background (same as the show-popup-now command; Obsidian itself stays in the background, and the popup gets keyboard focus so you can answer with Space and the number keys right away). Click the button, then press the keys together, e.g. Ctrl + Alt + R. Esc cancels.",
+    shortcutNotSet: "Not set",
+    shortcutRecording: "Press keys…",
+    shortcutClear: "Clear",
+    shortcutNeedModifier: "Include Ctrl, Alt, or Win in the combination.",
+    shortcutUnsupportedKey: "This key can't be used for a shortcut.",
+    shortcutConflict:
+        "{key} is already used by another app (or Obsidian in another vault), so it could not be registered.",
+    shortcutInvalid: "{key} could not be registered as a shortcut.",
+    shortcutUnavailable: "Global shortcuts are not available in this version of Obsidian.",
+    shortcutSaved: "Registered {key}.",
     settingsLanguage: "Language",
     settingsLanguageDesc: "Language of this plugin's interface.",
     languageDefault: "Obsidian's default",
@@ -148,6 +161,18 @@ const ja: Strings = {
     settingsPaused: "ポップアップを一時停止",
     settingsPausedDesc:
         "自動ポップアップを一時的に止めます。右下ステータスバーのベルアイコンとコマンドでも切り替えられます。停止中でも「今すぐ表示」コマンドは動きます。",
+    settingsGlobalShortcut: "グローバルショートカット",
+    settingsGlobalShortcutDesc:
+        "Obsidian がバックグラウンドでも、このキーの組み合わせでレビューポップアップを表示します（「今すぐ表示」コマンドと同じ動作。Obsidian 本体は前面に出ず、ポップアップにキーボードフォーカスが移るので Space と数字キーですぐ回答できます）。ボタンを押してから、キーを同時に押してください（例: Ctrl + Alt + R）。Esc で取り消し。",
+    shortcutNotSet: "未設定",
+    shortcutRecording: "キーを押してください…",
+    shortcutClear: "解除",
+    shortcutNeedModifier: "Ctrl・Alt・Win のいずれかと組み合わせてください。",
+    shortcutUnsupportedKey: "このキーはショートカットに使えません。",
+    shortcutConflict: "{key} は他のアプリ（または別の保管庫の Obsidian）が使用中のため登録できませんでした。",
+    shortcutInvalid: "{key} はショートカットとして登録できませんでした。",
+    shortcutUnavailable: "このバージョンの Obsidian ではグローバルショートカットを使えません。",
+    shortcutSaved: "{key} を登録しました。",
     settingsLanguage: "言語",
     settingsLanguageDesc: "このプラグインの表示言語。",
     languageDefault: "Obsidianの設定に従う",

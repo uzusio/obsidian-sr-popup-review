@@ -5,6 +5,7 @@ import { PopupController } from "./popup";
 import { Scheduler } from "./scheduler";
 import { DEFAULT_SETTINGS, SRPopupSettings, SRPopupSettingTab } from "./settings";
 import { setLocaleOverride, t } from "./i18n";
+import { GlobalShortcutManager, ShortcutResult } from "./global-shortcut";
 
 export default class SRPopupPlugin extends Plugin {
     declare settings: SRPopupSettings;
@@ -12,6 +13,9 @@ export default class SRPopupPlugin extends Plugin {
     diag!: DiagLog;
     popup!: PopupController;
     scheduler!: Scheduler;
+    globalShortcut!: GlobalShortcutManager;
+    /** Result of the last apply() of settings.globalShortcut; drives the settings tab's status message. */
+    globalShortcutState: ShortcutResult = "ok";
     private statusBarIconEl: HTMLElement | null = null;
 
     async onload(): Promise<void> {
@@ -51,18 +55,30 @@ export default class SRPopupPlugin extends Plugin {
                 heightRevealed: this.settings.popupHeightRevealed,
             }),
         );
+        this.scheduler = new Scheduler(this);
+        this.globalShortcut = new GlobalShortcutManager(
+            (message) => this.diag.log(message),
+            () => void this.scheduler.tick("manual", true),
+        );
+        this.globalShortcutState = this.globalShortcut.apply(this.settings.globalShortcut);
+        if (this.globalShortcutState !== "ok") {
+            this.diag.log(
+                `global shortcut "${this.settings.globalShortcut}" could not be registered at startup (${this.globalShortcutState})`,
+            );
+        }
         // Quitting or reloading Obsidian tears this renderer down without
         // running onunload, which left the popup behind — and because a live
         // BrowserWindow blocks Electron's window-all-closed, it kept the whole
         // Obsidian process alive with it. beforeunload still runs here, and
-        // @electron/remote calls are synchronous, so the popup can be destroyed
-        // before the window goes away.
+        // @electron/remote calls are synchronous, so the popup (and the global
+        // shortcut, which must not survive a reload/quit as a stale IPC
+        // registration) can be torn down before the window goes away.
         this.registerDomEvent(window, "beforeunload", () => {
+            this.globalShortcut.unregister();
             if (!this.popup.isOpen) return;
             this.diag.log("main window unloading; closing popup");
             this.popup.close();
         });
-        this.scheduler = new Scheduler(this);
 
         this.addSettingTab(new SRPopupSettingTab(this.app, this));
         this.addCommand({
@@ -113,7 +129,28 @@ export default class SRPopupPlugin extends Plugin {
     }
 
     onunload(): void {
+        this.globalShortcut.unregister();
         this.popup.close();
+    }
+
+    /**
+     * Applies a new global-shortcut accelerator (or "" to clear it). On
+     * success the setting is saved and globalShortcutState becomes "ok". On
+     * failure the setting is left untouched and the previously-registered
+     * accelerator (if any) is restored via globalShortcut.resume() — the
+     * caller (the settings tab's key recorder) is expected to have already
+     * called globalShortcut.suspend() before recording a replacement.
+     */
+    async setGlobalShortcut(accelerator: string): Promise<ShortcutResult> {
+        const result = this.globalShortcut.apply(accelerator);
+        if (result === "ok") {
+            this.settings.globalShortcut = accelerator;
+            await this.saveSettings();
+            this.globalShortcutState = "ok";
+            return "ok";
+        }
+        this.globalShortcut.resume();
+        return result;
     }
 
     async loadSettings(): Promise<void> {

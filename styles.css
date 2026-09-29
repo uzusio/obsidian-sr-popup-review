@@ -1,6 +1,6 @@
 /* Popup Review for Spaced Repetition
  * The popup itself is a separate BrowserWindow with inline styles;
- * these rules only style the settings tab (dual-list deck picker). */
+ * these rules only style the settings tab (deck picker, shortcut recorder). */
 
 .sr-popup-duallist {
     display: flex;
@@ -42,4 +42,20 @@
 .sr-popup-size-input {
     width: 64px;
     text-align: center;
+}
+
+.sr-popup-shortcut-button {
+    min-width: 180px;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.sr-popup-shortcut-status {
+    margin-top: 4px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.sr-popup-shortcut-status.mod-warning {
+    color: var(--text-error);
 }

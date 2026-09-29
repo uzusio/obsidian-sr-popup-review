@@ -1,5 +1,6 @@
 import { App, Component, MarkdownRenderer, Notice } from "obsidian";
 import { IntervalPreview, RatingKey, ReviewResponse, ReviewResponseValue, ReviewSession } from "./sr-bridge";
+import type { GlobalShortcutLike } from "./global-shortcut";
 import { t } from "./i18n";
 
 // ---------------------------------------------------------------------------
@@ -44,9 +45,11 @@ interface ElectronRemoteLike {
     };
     /** In the main Obsidian renderer this is the main Obsidian window. */
     getCurrentWindow?: () => BrowserWindowLike | undefined;
+    globalShortcut?: GlobalShortcutLike;
 }
 
-function getRemote(): ElectronRemoteLike | null {
+/** Shared with global-shortcut.ts, which touches the same @electron/remote bridge. */
+export function getRemote(): ElectronRemoteLike | null {
     try {
         const requireFn = (window as Window & { require?: (module: string) => unknown }).require;
         if (typeof requireFn !== "function") return null;
@@ -176,6 +179,8 @@ export class PopupController {
         session: ReviewSession,
         autoCloseSeconds: number,
         showDeckName: boolean,
+        /** Give the popup keyboard focus (global shortcut) instead of showing it inactive. */
+        focus = false,
     ): Promise<boolean> {
         if (this.isOpen) return false;
         const remote = getRemote();
@@ -237,7 +242,12 @@ export class PopupController {
             return false;
         }
         try {
-            win.showInactive?.();
+            if (focus) {
+                win.show?.();
+                win.focus?.();
+            } else {
+                win.showInactive?.();
+            }
         } catch (e) {
             console.error("[sr-popup-review] failed to show popup", e);
             this.finish();
@@ -292,12 +302,13 @@ export class PopupController {
 
     /** Re-raises an open popup (e.g. when the user asks for one while it is
      * hidden behind other always-on-top windows). No-op when closed. */
-    bringToFront(): void {
+    bringToFront(focus = false): void {
         if (!this.isOpen) return;
         try {
             this.win?.showInactive?.();
             this.win?.setAlwaysOnTop?.(true, "screen-saver");
             this.win?.moveTop?.();
+            if (focus) this.win?.focus?.();
         } catch (e) {
             this.diag(`failed to raise popup: ${String(e)}`);
         }

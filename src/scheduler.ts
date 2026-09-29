@@ -1,8 +1,9 @@
-import { Notice, moment } from "obsidian";
+import { moment } from "obsidian";
 import type SRPopupPlugin from "./main";
 import type { DeckFilter } from "./sr-bridge";
 import { isFullscreenAppActive } from "./fullscreen";
 import { t } from "./i18n";
+import { notify } from "./notify";
 
 const TICK_MS = 60_000;
 const STARTUP_DELAY_MS = 15_000;
@@ -56,13 +57,14 @@ export class Scheduler {
         return this.newCardsShownToday() < s.newCardsPerDay;
     }
 
-    async tick(mode: TickMode): Promise<void> {
+    /** `focusPopup`: the global shortcut hands keyboard focus to the popup it opens or raises. */
+    async tick(mode: TickMode, focusPopup = false): Promise<void> {
         if (this.tickingSince !== null) {
             if (Date.now() - this.tickingSince < TICK_WATCHDOG_MS) {
                 this.plugin.diag.log(
                     `tick(${mode}): skipped — previous tick still running (${Math.round((Date.now() - this.tickingSince) / 1000)}s)`,
                 );
-                if (mode === "manual") new Notice(t("popupPreparing"));
+                if (mode === "manual") notify(t("popupPreparing"));
                 return;
             }
             // A previous tick never returned (hung SR sync or popup creation).
@@ -75,7 +77,7 @@ export class Scheduler {
         const token = ++this.tickToken;
         this.tickingSince = Date.now();
         try {
-            await this.doTick(mode);
+            await this.doTick(mode, focusPopup);
         } finally {
             if (token === this.tickToken) this.tickingSince = null;
         }
@@ -97,7 +99,7 @@ export class Scheduler {
         await this.tick("startup");
     }
 
-    private async doTick(mode: TickMode): Promise<void> {
+    private async doTick(mode: TickMode, focusPopup: boolean): Promise<void> {
         const s = this.plugin.settings;
         const log = (message: string): void => {
             this.plugin.diag.log(`tick(${mode}): ${message}`);
@@ -113,7 +115,7 @@ export class Scheduler {
         if (this.plugin.popup.isOpen) {
             if (await this.plugin.popup.ensureAlive()) {
                 if (mode === "manual") {
-                    this.plugin.popup.bringToFront();
+                    this.plugin.popup.bringToFront(focusPopup);
                     log("a popup is already open; brought it to front");
                 } else {
                     log("a popup is already open");
@@ -148,15 +150,15 @@ export class Scheduler {
         if (probe.status !== "ok") {
             log(`integration unavailable (${probe.status}: ${probe.reason ?? "?"})`);
             if (mode === "manual") {
-                if (probe.status === "missing") new Notice(t("srMissing"));
-                else if (probe.status === "notReady") new Notice(t("srNotReady"));
-                else new Notice(t("incompatible", { reason: probe.reason ?? "?" }));
+                if (probe.status === "missing") notify(t("srMissing"));
+                else if (probe.status === "notReady") notify(t("srNotReady"));
+                else notify(t("incompatible", { reason: probe.reason ?? "?" }));
             } else if (probe.status === "incompatible" && !this.warnedIncompatible) {
                 // SR is installed but its internals don't match what we verified:
                 // warn once and never write through an unknown path.
                 // "missing"/"notReady" are normal transient states — stay silent.
                 this.warnedIncompatible = true;
-                new Notice(t("incompatible", { reason: probe.reason ?? "?" }));
+                notify(t("incompatible", { reason: probe.reason ?? "?" }));
             }
             return;
         }
@@ -189,7 +191,7 @@ export class Scheduler {
         if (!session) {
             log("no card matches (nothing due, no new-card budget left, or filtered out)");
             if (mode !== "manual") this.nothingDueUntil = Date.now() + NOTHING_DUE_BACKOFF_MS;
-            else new Notice(t("nothingDue"));
+            else notify(t("nothingDue"));
             return;
         }
         this.nothingDueUntil = 0;
@@ -203,10 +205,15 @@ export class Scheduler {
         }
         s.lastShownAt = Date.now();
         await this.plugin.saveSettings();
-        const shown = await this.plugin.popup.show(session, s.autoCloseSeconds, s.showDeckName);
+        const shown = await this.plugin.popup.show(
+            session,
+            s.autoCloseSeconds,
+            s.showDeckName,
+            focusPopup,
+        );
         if (!shown) {
             log("popup window failed to open");
-            if (mode === "manual") new Notice(t("popupFailed"));
+            if (mode === "manual") notify(t("popupFailed"));
         }
     }
 }
