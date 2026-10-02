@@ -183,6 +183,15 @@ interface NoteSource {
     blockId: string | null;
 }
 
+type CardKind = "due" | "new";
+
+/** Cards one deck itself holds (excluding subdecks), as counted by SR. */
+interface DeckCounts {
+    deck: SRDeck;
+    due: number;
+    fresh: number;
+}
+
 export type RatingKey = "again" | "hard" | "good" | "easy";
 
 /**
@@ -203,6 +212,9 @@ export interface ReviewSession {
     deckName: string | null;
     dueCount: number;
     newCount: number;
+    /** Diagnostics: eligible due cards (D) and new cards after the cap (N') the draw was based on. */
+    eligibleDue: number;
+    eligibleNew: number;
     isNewCard: boolean;
     /** Button labels as configured in the SR plugin's settings. */
     buttonLabels: { again: string; hard: string; good: string; easy: string };
@@ -357,11 +369,15 @@ export class SRBridge {
 
     /**
      * Opens a one-card review session, or returns null when there is nothing to show
-     * (no cards, SR busy, internals incompatible, or no card passes the deck filter /
-     * dueCardsOnly conditions).
+     * (no cards, SR busy, internals incompatible, or no card passes the deck filter).
+     *
+     * Due and new cards are mixed by the ratio of eligible cards: with D due cards
+     * and N' = min(N, newCap) new cards (all passing the deck filter), a new card is
+     * chosen with probability N' / (D + N'), otherwise a due card. `newCap` is the
+     * remaining new-card allowance (0 = none, Infinity = unlimited).
      */
     async openSession(
-        dueCardsOnly: boolean,
+        newCap: number,
         filter: DeckFilter,
         randomizeDeckOrder: boolean,
     ): Promise<ReviewSession | null> {
@@ -378,13 +394,25 @@ export class SRBridge {
         const processReview = sequencer.processReview;
         if (typeof processReview !== "function") return null;
 
+        // Decide due vs new by the ratio of eligible cards (the tree is in sync
+        // now). New cards are capped by the caller's remaining allowance (newCap).
+        const entries = this.collectDeckCounts(sr, filter);
+        if (!entries) return null;
+        const eligibleDue = entries.reduce((sum, e) => sum + e.due, 0);
+        const eligibleNew = Math.min(
+            entries.reduce((sum, e) => sum + e.fresh, 0),
+            Math.max(0, newCap),
+        );
+        if (eligibleDue + eligibleNew <= 0) return null;
+        const kind: CardKind = Math.random() * (eligibleDue + eligibleNew) < eligibleNew ? "new" : "due";
+
         // SR's own deck order is sequential: the first deck in the tree supplies
         // every card until its due pile is empty, which starves later decks when
         // only one card is sampled per popup. Optionally re-position the sequencer
-        // onto a deck chosen at random, weighted by due-card count, so every due
-        // card in the vault has (approximately) equal probability.
+        // onto a deck chosen at random, weighted by the chosen kind's card count,
+        // so every card of that kind in the vault has (approximately) equal probability.
         if (randomizeDeckOrder && typeof sequencer.setCurrentDeck === "function") {
-            const chosen = this.pickRandomDeck(sr, dueCardsOnly, filter);
+            const chosen = this.pickRandomDeck(entries, kind);
             const topicPath =
                 typeof chosen?.getTopicPath === "function" ? chosen.getTopicPath() : undefined;
             if (topicPath) {
@@ -399,14 +427,14 @@ export class SRBridge {
             }
         }
 
-        // Walk the queue to the first card that passes the deck filter (and, with
-        // dueCardsOnly, has a schedule). skipCurrentCard() only mutates the in-memory
-        // queue — nothing is written, and the next sync rebuilds the tree.
+        // Walk the queue to the first card that passes the deck filter and is of the
+        // chosen kind. skipCurrentCard() only mutates the in-memory queue — nothing
+        // is written, and the next sync rebuilds the tree.
         let skips = 0;
         while (sequencer.hasCurrentCard === true) {
             const allowed = deckAllowed(this.currentDeckPath(sequencer), filter);
             const isNew = sequencer.currentCard?.hasSchedule !== true;
-            if (allowed && (!dueCardsOnly || !isNew)) break;
+            if (allowed && (kind === "new" ? isNew : !isNew)) break;
             if (typeof sequencer.skipCurrentCard !== "function" || ++skips > MAX_FILTER_SKIPS)
                 return null;
             sequencer.skipCurrentCard();
@@ -455,6 +483,8 @@ export class SRBridge {
             deckName,
             dueCount,
             newCount,
+            eligibleDue,
+            eligibleNew,
             isNewCard,
             buttonLabels,
             intervals,
@@ -556,23 +586,18 @@ export class SRBridge {
     }
 
     /**
-     * Picks a deck at random from those holding cards that pass the deck filter,
-     * weighted by the number of eligible cards each deck itself holds (subdecks
-     * are their own candidates). Returns null when nothing is eligible.
+     * Walks the remaining deck tree and returns, for every deck that passes the
+     * deck filter, the due / new cards that deck itself holds (subdecks are their
+     * own entries, so nothing is double counted). Returns null when the tree or
+     * its count API is unavailable or throws (fail safe: no card is offered).
      */
-    private pickRandomDeck(
-        sr: SRPluginLike,
-        dueCardsOnly: boolean,
-        filter: DeckFilter,
-    ): SRDeck | null {
-        const candidates: { deck: SRDeck; weight: number }[] = [];
+    private collectDeckCounts(sr: SRPluginLike, filter: DeckFilter): DeckCounts[] | null {
+        const entries: DeckCounts[] = [];
         const collect = (deck: SRDeck, path: string): void => {
             if (typeof deck.getDistinctRepItemCount === "function" && deckAllowed(path, filter)) {
-                let weight = deck.getDistinctRepItemCount(REP_ITEM_TYPE_DUE, false);
-                if (!dueCardsOnly) {
-                    weight += deck.getDistinctRepItemCount(REP_ITEM_TYPE_NEW, false);
-                }
-                if (weight > 0) candidates.push({ deck, weight });
+                const due = deck.getDistinctRepItemCount(REP_ITEM_TYPE_DUE, false);
+                const fresh = deck.getDistinctRepItemCount(REP_ITEM_TYPE_NEW, false);
+                if (due > 0 || fresh > 0) entries.push({ deck, due, fresh });
             }
             const subdecks = deck.subdecks;
             if (!Array.isArray(subdecks)) return;
@@ -584,14 +609,25 @@ export class SRBridge {
         };
         try {
             const root = sr.dataManager?.osrCore?.remainingDeckTree;
-            if (root) collect(root, "");
+            if (!root) return null;
+            collect(root, "");
         } catch {
             return null;
         }
+        return entries;
+    }
+
+    /**
+     * Picks a deck at random, weighted by the number of cards of `kind` each deck
+     * itself holds. Returns null when no deck holds any.
+     */
+    private pickRandomDeck(entries: DeckCounts[], kind: CardKind): SRDeck | null {
+        const weightOf = (e: DeckCounts): number => (kind === "new" ? e.fresh : e.due);
+        const candidates = entries.filter((e) => weightOf(e) > 0);
         if (candidates.length === 0) return null;
-        let r = Math.random() * candidates.reduce((sum, c) => sum + c.weight, 0);
+        let r = Math.random() * candidates.reduce((sum, c) => sum + weightOf(c), 0);
         for (const candidate of candidates) {
-            r -= candidate.weight;
+            r -= weightOf(candidate);
             if (r < 0) return candidate.deck;
         }
         return candidates[candidates.length - 1].deck;

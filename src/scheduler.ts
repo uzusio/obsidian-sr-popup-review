@@ -50,11 +50,12 @@ export class Scheduler {
         return s.newCardsShownDate === moment().format("YYYY-MM-DD") ? s.newCardsShownCount : 0;
     }
 
-    private newCardBudgetLeft(): boolean {
+    /** How many new cards may still be introduced today (Infinity = unlimited). */
+    private newCardCap(): number {
         const s = this.plugin.settings;
-        if (s.newCardsMode === "none") return false;
-        if (s.newCardsMode === "unlimited") return true;
-        return this.newCardsShownToday() < s.newCardsPerDay;
+        if (s.newCardsMode === "none") return 0;
+        if (s.newCardsMode === "unlimited") return Infinity;
+        return Math.max(0, s.newCardsPerDay - this.newCardsShownToday());
     }
 
     /** `focusPopup`: the global shortcut hands keyboard focus to the popup it opens or raises. */
@@ -168,24 +169,25 @@ export class Scheduler {
         }
 
         const filter: DeckFilter = { mode: s.deckFilterMode, paths: s.deckFilterList };
-        // Due cards always take priority.
-        let session = await this.plugin.bridge.openSession(true, filter, s.randomizeDeckOrder);
-        let introducesNewCard = false;
-        if (!session) {
-            if (this.newCardBudgetLeft()) {
-                // Nothing due: introduce a never-reviewed card within the daily
-                // budget, so new cards enter the review cycle without flooding it.
-                session = await this.plugin.bridge.openSession(false, filter, s.randomizeDeckOrder);
-                introducesNewCard = session?.isNewCard === true;
-                if (session) {
-                    log(
-                        s.newCardsMode === "unlimited"
-                            ? "no due card; introducing a new card (unlimited)"
-                            : `no due card; introducing a new card (${this.newCardsShownToday() + 1}/${s.newCardsPerDay} today)`,
-                    );
-                }
-            } else if (s.newCardsMode === "limited") {
-                log(`no due card; daily new-card budget reached (${s.newCardsPerDay}/day)`);
+        // Due and new cards are mixed by the ratio of their counts; new cards are
+        // capped by what is left of today's allowance.
+        const session = await this.plugin.bridge.openSession(
+            this.newCardCap(),
+            filter,
+            s.randomizeDeckOrder,
+        );
+        const introducesNewCard = session?.isNewCard === true;
+        if (session) {
+            const eligible = `(eligible: due ${session.eligibleDue}, new ${session.eligibleNew})`;
+            if (introducesNewCard) {
+                log(
+                    `picked a new card ${eligible}` +
+                        (s.newCardsMode === "limited"
+                            ? ` — ${this.newCardsShownToday() + 1}/${s.newCardsPerDay} today`
+                            : ""),
+                );
+            } else {
+                log(`picked a due card ${eligible}`);
             }
         }
         if (!session) {

@@ -25,7 +25,7 @@ export interface SRPopupSettings {
     quietHoursStart: string;
     quietHoursEnd: string;
     autoCloseSeconds: number;
-    /** Whether never-reviewed cards are introduced when nothing is due. */
+    /** Whether never-reviewed cards are mixed in with due cards (and with what cap). */
     newCardsMode: "none" | "limited" | "unlimited";
     /** Daily cap used when newCardsMode is "limited". */
     newCardsPerDay: number;

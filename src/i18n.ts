@@ -66,9 +66,9 @@ const en: Strings = {
     settingsNextPopup: "Popup schedule",
     settingsNextPopupDesc: "Last shown: {last} — next: {next}",
     lastPopupNever: "never",
-    nextPopupAsap: "within about a minute, as soon as a matching due card exists",
+    nextPopupAsap: "within about a minute, as soon as a matching card exists",
     nextPopupAt: "{time} or later",
-    nextPopupBackoff: "{time} or later — the last check found no matching due card",
+    nextPopupBackoff: "{time} or later — the last check found no matching card",
     popupOpenNow: "a popup is open right now",
     settingsInterval: "Popup interval (minutes)",
     settingsIntervalDesc: "How often a popup may appear. Minimum 5 minutes.",
@@ -100,7 +100,7 @@ const en: Strings = {
     deckNotFound: "not found in the current decks",
     settingsNewMode: "New cards",
     settingsNewModeDesc:
-        "When nothing is due, never-reviewed cards can be introduced so they enter the review cycle.",
+        "Never-reviewed cards are mixed in with due cards, in proportion to how many of each are available (with a daily limit, only today's remaining allowance counts). New cards keep entering the review cycle even while due cards remain.",
     newModeNone: "Don't introduce",
     newModeLimited: "Up to a daily limit",
     newModeUnlimited: "Unlimited",
@@ -108,7 +108,7 @@ const en: Strings = {
     settingsNewPerDayDesc: "At most this many never-reviewed cards are introduced per day.",
     settingsRandomDeck: "Randomize deck order",
     settingsRandomDeckDesc:
-        "Pick each popup card from a random deck (weighted by its due-card count), so every due card has a roughly equal chance. Turn off to follow Spaced Repetition's deck order, which drains the first deck in the tree before later ones.",
+        "Pick each popup card from a random deck (weighted by its card count), so every card has a roughly equal chance. Turn off to follow Spaced Repetition's deck order, which drains the first deck in the tree before later ones.",
     settingsFullscreen: "Skip popups during fullscreen apps",
     settingsFullscreenDesc:
         "When Windows reports a fullscreen app or presentation in the foreground (games, slideshows, F11 fullscreen), the popup is postponed and appears within a minute after fullscreen ends. Windows only; the manual show-popup-now command is not affected.",
@@ -214,7 +214,7 @@ const ja: Strings = {
     deckNotFound: "現在のデッキに存在しません",
     settingsNewMode: "新規カードの導入",
     settingsNewModeDesc:
-        "期限カードがないとき、未レビューの新規カードを出して復習サイクルに乗せます。",
+        "未レビューの新規カードを、期限カードとの枚数の比率で混ぜて出します（1日の上限枚数までの場合は、その日の残り枠だけを新規カードの枚数とみなします）。期限カードが残っていても新規カードが復習サイクルに入ります。",
     newModeNone: "出さない",
     newModeLimited: "1日の上限枚数まで",
     newModeUnlimited: "無制限",
@@ -222,7 +222,7 @@ const ja: Strings = {
     settingsNewPerDayDesc: "1日にこの枚数まで導入します。",
     settingsRandomDeck: "デッキ順を無視してランダムに出題",
     settingsRandomDeckDesc:
-        "毎回のポップアップを、期限枚数で重み付けしたランダムなデッキから選びます（全期限カードがほぼ等確率になります）。オフにすると Spaced Repetition 本来のデッキ順（ツリーの前のデッキから消化）に従います。",
+        "毎回のポップアップを、カード枚数で重み付けしたランダムなデッキから選びます（全カードがほぼ等確率になります）。オフにすると Spaced Repetition 本来のデッキ順（ツリーの前のデッキから消化）に従います。",
     settingsFullscreen: "フルスクリーンアプリ中はポップアップを出さない",
     settingsFullscreenDesc:
         "ゲーム・スライドショー・F11全画面などのフルスクリーン状態をWindowsに問い合わせて検出し、その間はポップアップを見送ります（フルスクリーン終了後1分以内に出ます）。Windows専用。手動の「今すぐ表示」コマンドには影響しません。",
