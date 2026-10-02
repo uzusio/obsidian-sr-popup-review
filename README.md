@@ -62,8 +62,8 @@ To pause automatic popups, click the **bell icon in the status bar** (bottom rig
 | Popup interval (minutes) | 120 | How often a popup may appear (minimum 5) |
 | Do not disturb | on, 01:00–09:00 | Toggle plus a time range with no popups; supports ranges across midnight |
 | Auto-close (seconds) | 90 | Closes an untouched popup (nothing is written); 0 disables |
-| New cards | Up to a daily limit (10/day) | When nothing is due, never-reviewed cards are introduced into the cycle: *don't introduce* / *up to a daily limit* / *unlimited* |
-| Randomize deck order | on | Pick each popup card from a random deck (weighted by due count) so every due card has a roughly equal chance; off follows Spaced Repetition's sequential deck order |
+| New cards | Up to a daily limit (10/day) | Never-reviewed cards are mixed in with due cards in proportion to how many of each are available (with a daily limit, only today's remaining allowance counts): *don't introduce* / *up to a daily limit* / *unlimited* |
+| Randomize deck order | on | Pick each popup card from a random deck (weighted by card count) so every card has a roughly equal chance; off follows Spaced Repetition's sequential deck order |
 | Skip popups during fullscreen apps | on | Postpones popups while Windows reports a fullscreen app or presentation (games, slideshows, F11); the card appears within a minute after fullscreen ends. Windows only |
 | Deck filter | All decks | *All decks* or *Only listed decks* |
 | Deck list | — | Dual-list picker: move decks between *available* and *target* with the add/remove buttons (double-click works too); a target deck also covers its subdecks. Empty target list = all decks |
@@ -83,6 +83,65 @@ The settings tab also shows whether the Spaced Repetition integration is working
 - Popups appear only while Obsidian is running (minimized is fine).
 - The popup is a custom always-on-top window, not an OS notification: it does not appear in the notification center and ignores Focus Assist itself. Fullscreen apps and presentations are detected separately and skipped (see settings).
 - Position is fixed to the bottom-right of the primary display for now.
+
+## Changelog
+
+### Unreleased
+
+- **Global shortcut**: set a system-wide key combination in settings to show a popup even while Obsidian is in the background. Obsidian itself stays in the background, and the popup takes keyboard focus so you can answer right away (#7)
+- **New cards are mixed in with due cards** in proportion to how many of each are available (within the daily limit). Previously new cards appeared only once nothing was due, so a due backlog could stop them entirely
+- When Obsidian is not focused, the result of a manual request (e.g. "no cards to review right now") is also shown as an OS notification
+
+### 1.4.0 — 2026-09-26
+
+- Status-bar button to show a review popup right away
+
+### 1.3.0 — 2026-09-24
+
+- Rating buttons show the next review interval on a second line, like Spaced Repetition's "Show next review time" (#6)
+
+### 1.2.1 — 2026-09-24
+
+- Fixed: the popup stayed open after quitting Obsidian and could not be closed with ✕ / Esc (#5)
+
+### 1.2.0 — 2026-09-23
+
+- "Open note" in the popup's ⋯ menu (#3)
+- Tables in cards are drawn with borders
+- Fixed: rating a popup that was left open longer than the interval immediately triggered the next popup (#4)
+
+### 1.1.0 — 2026-09-15
+
+- Resize the popup by dragging its edges; the default size can be set in settings (#1)
+- Settings tab rebuilt on Obsidian's declarative settings (searchable); fixed the integration status and schedule lines not updating (#2)
+
+### 1.0.5 — 2026-08-17
+
+- Options menu in the popup header (pause / snooze)
+- New-card introduction became an explicit setting: don't introduce / up to a daily limit / unlimited
+- The popup interval now counts from when a popup ends, not when it starts
+
+### 1.0.4 — 2026-08-14
+
+- New cards are introduced daily within a limit, instead of never appearing
+- Persistent diagnostics log; the settings tab shows when the next popup can appear
+
+### 1.0.3 — 2026-08-10
+
+- Popups are skipped while a fullscreen app or presentation is active (Windows)
+
+### 1.0.2 — 2026-07-21
+
+- Option to randomize the deck order when picking a popup card
+- More robust handling of popup windows that were destroyed unexpectedly
+
+### 1.0.1 — 2026-07-16
+
+- Fixes from the community plugin review
+
+### 1.0.0 — 2026-07-14
+
+- First public release
 
 ## Development
 
