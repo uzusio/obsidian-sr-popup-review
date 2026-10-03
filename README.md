@@ -93,6 +93,7 @@ The settings tab also shows whether the Spaced Repetition integration is working
 ### Unreleased
 
 - **Show the popup on a local page**: mirror the popup, exactly as it appears, to a local web page for OBS (browser source), screen sharing, or another browser window (#8)
+- Multi-line cards are easier to read: each line of a card gets a little space before the next, and long lines that wrap are indented, so a wrap no longer looks like a new line
 - **Global shortcut**: set a system-wide key combination in settings to show a popup even while Obsidian is in the background. Obsidian itself stays in the background, and the popup takes keyboard focus so you can answer right away (#7)
 - **New cards are mixed in with due cards** in proportion to how many of each are available (within the daily limit). Previously new cards appeared only once nothing was due, so a due backlog could stop them entirely
 - The popup header shows how many cards you reviewed today (including reviews in Spaced Repetition itself), alongside the remaining due and new cards

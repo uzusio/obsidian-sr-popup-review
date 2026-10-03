@@ -192,6 +192,32 @@ function escapeHtml(s: string): string {
         .replace(/"/g, "&quot;");
 }
 
+/**
+ * Splits every paragraph that contains line breaks (`<p>a<br>b</p>`) into one
+ * `.ln` block per line, so the popup can space lines apart and indent wrapped
+ * continuations — otherwise a long line's wrap looks exactly like a new line.
+ * Only direct `<br>` children of `<p>` are touched (lists, tables keep theirs).
+ */
+function splitLineBreaks(root: HTMLElement): void {
+    for (const p of Array.from(root.querySelectorAll("p"))) {
+        if (!Array.from(p.children).some((c) => c.tagName === "BR")) continue;
+        const lines: Node[][] = [[]];
+        for (const node of Array.from(p.childNodes)) {
+            if (node.nodeName === "BR") lines.push([]);
+            else lines[lines.length - 1].push(node);
+        }
+        p.empty();
+        for (const nodes of lines) {
+            // Drop the "\n" text node the renderer leaves after each <br>.
+            const first = nodes[0];
+            if (first?.nodeType === Node.TEXT_NODE) first.textContent = (first.textContent ?? "").replace(/^\n/, "");
+            if (nodes.every((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim() === "")) continue;
+            const line = p.createSpan({ cls: "ln" });
+            for (const n of nodes) line.appendChild(n);
+        }
+    }
+}
+
 const INTERVAL_UNIT_KEY: Record<IntervalPreview["unit"], string> = {
     minutes: "ivlMinutes",
     hours: "ivlHours",
@@ -686,6 +712,7 @@ export class PopupController {
         const el = createDiv();
         try {
             await MarkdownRenderer.render(this.app, markdown, el, "", this.owner);
+            splitLineBreaks(el);
             return el.innerHTML;
         } catch (e) {
             console.error("[sr-popup-review] markdown render failed, using plain text", e);
@@ -794,6 +821,10 @@ body {
 .content th, .content td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; vertical-align: top; }
 .content th { background: var(--btn-bg); font-weight: 600; }
 .q { font-size: 15px; }
+/* One block per source line (see splitLineBreaks): a gap between lines and a
+   hanging indent on wrapped continuations tell a line break from a wrap. */
+.content .ln { display: block; padding-left: 1em; text-indent: -1em; }
+.content .ln + .ln { margin-top: 0.4em; }
 .footer { flex: none; padding: 10px 12px 12px; }
 button.action {
     font-family: inherit; font-size: 13px; cursor: pointer;
