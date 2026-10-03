@@ -92,6 +92,7 @@ The settings tab also shows whether the Spaced Repetition integration is working
 
 ### Unreleased
 
+- Fixed: when a card's text was edited while its popup was open, Spaced Repetition silently skipped saving the rating but the popup reported it as saved. The popup now verifies the save, says when it did not happen, and logs it
 - **Show the popup on a local page**: mirror the popup, exactly as it appears, to a local web page for OBS (browser source), screen sharing, or another browser window (#8)
 - Multi-line cards are easier to read: each line of a card gets a little space before the next, and long lines that wrap are indented, so a wrap no longer looks like a new line
 - **Global shortcut**: set a system-wide key combination in settings to show a popup even while Obsidian is in the background. Obsidian itself stays in the background, and the popup takes keyboard focus so you can answer right away (#7)

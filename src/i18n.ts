@@ -26,6 +26,9 @@ const en: Strings = {
         "Popup Review for Spaced Repetition: failed to save the review. See the developer console for details.",
     ratingTimeout:
         "Popup Review for Spaced Repetition: the review write did not respond, so the popup was closed. Please check the card's schedule.",
+    ratingNotSaved:
+        "Popup Review for Spaced Repetition: the rating was not saved because the card's text was changed while the popup was open. Review the card again.",
+    popupNotSaved: "Not saved — the card was edited",
     savingStuck: "Not responding — press ✕ or Esc to close",
     srMissing: "Popup Review for Spaced Repetition: the Spaced Repetition plugin is not enabled.",
     srNotReady: "Popup Review for Spaced Repetition: Spaced Repetition is still initializing. Try again in a moment.",
@@ -156,6 +159,9 @@ const ja: Strings = {
         "Popup Review for Spaced Repetition: 評価の書き込みに失敗しました。詳細は開発者コンソールを確認してください。",
     ratingTimeout:
         "Popup Review for Spaced Repetition: 書き込みが応答しないためポップアップを閉じました。カードのスケジュールを確認してください。",
+    ratingNotSaved:
+        "Popup Review for Spaced Repetition: ポップアップ表示中にカードの文面が変更されたため、評価は記録されませんでした。もう一度レビューしてください。",
+    popupNotSaved: "記録できませんでした（カードが編集されました）",
     savingStuck: "応答がありません — ✕ か Esc で閉じられます",
     srMissing: "Popup Review for Spaced Repetition: Spaced Repetition プラグインが有効になっていません。",
     srNotReady: "Popup Review for Spaced Repetition: Spaced Repetition の初期化がまだ終わっていません。少し待ってからもう一度試してください。",

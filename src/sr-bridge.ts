@@ -39,6 +39,8 @@ interface SRDeck {
 
 interface SRQuestionText {
     obsidianBlockId?: unknown;
+    /** The card's full text as SR believes it is in the note (replaced by the new text after a successful write). */
+    original?: unknown;
 }
 
 /** SR's ISRFile (SrTFile wraps a TFile; `path` is the vault-relative path). */
@@ -212,6 +214,14 @@ export interface IntervalPreview {
     value: number;
 }
 
+/**
+ * Outcome of a rating write. SR swallows a failed write (card text no longer
+ * found in the note) without throwing, so the bridge verifies it afterwards:
+ * "saved" = the note contains the new card text, "notSaved" = it does not,
+ * "unknown" = could not be verified (treated as success by callers).
+ */
+export type RateResult = "saved" | "notSaved" | "unknown";
+
 export interface ReviewSession {
     /** Markdown of the question side (cloze deletions already masked by SR's parser). */
     front: string;
@@ -235,7 +245,9 @@ export interface ReviewSession {
      */
     intervals: Record<RatingKey, IntervalPreview | null> | null;
     /** Writes the review through SR's own pipeline (identical to pressing a button in its modal). */
-    rate(response: ReviewResponseValue): Promise<void>;
+    rate(response: ReviewResponseValue): Promise<RateResult>;
+    /** Diagnostics: "path:line" (line 1-based) of the card in its note; null when unknown. */
+    location: string | null;
     /** Opens the card's source note in Obsidian at the card's line (mirrors SR's own
      * "open note" action). null when the note could not be identified from SR's internals,
      * in which case the popup hides the menu item. Resolves false if the file no longer exists. */
@@ -500,11 +512,32 @@ export class SRBridge {
             reviewedToday,
             buttonLabels,
             intervals,
-            rate: async (response: ReviewResponseValue) => {
+            rate: async (response: ReviewResponseValue): Promise<RateResult> => {
                 await processReview.call(boundSequencer, response);
+                return this.verifyWrite(card, noteSource?.path ?? null);
             },
+            location: noteSource ? `${noteSource.path}:${noteSource.line + 1}` : null,
             openNote: noteSource ? () => this.openNoteAt(noteSource) : null,
         };
+    }
+
+    /**
+     * After processReview, checks that the note on disk really contains the card
+     * text SR now holds (SR replaces questionText.original with the freshly
+     * stamped text only when the write found the old text). Never throws:
+     * anything that cannot be checked yields "unknown".
+     */
+    private async verifyWrite(card: SRCard, path: string | null): Promise<RateResult> {
+        try {
+            const original = card.question?.questionText?.original;
+            if (typeof original !== "string" || original.length === 0 || !path) return "unknown";
+            const file = this.app.vault.getAbstractFileByPath(path);
+            if (!(file instanceof TFile)) return "unknown";
+            const text = await this.app.vault.read(file);
+            return text.includes(original) ? "saved" : "notSaved";
+        } catch {
+            return "unknown";
+        }
     }
 
     /**

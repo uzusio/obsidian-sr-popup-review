@@ -1,5 +1,5 @@
 import { App, Component, MarkdownRenderer, Notice } from "obsidian";
-import { IntervalPreview, RatingKey, ReviewResponse, ReviewResponseValue, ReviewSession } from "./sr-bridge";
+import { IntervalPreview, RateResult, RatingKey, ReviewResponse, ReviewResponseValue, ReviewSession } from "./sr-bridge";
 import type { GlobalShortcutLike } from "./global-shortcut";
 import { t } from "./i18n";
 
@@ -385,7 +385,7 @@ export class PopupController {
             void this.mirrorLoop(gen, mirror);
         }
         this.diag(
-            `popup shown (deck: ${session.deckName ?? "-"}, due: ${session.dueCount}, new card: ${session.isNewCard})`,
+            `popup shown (deck: ${session.deckName ?? "-"}, due: ${session.dueCount}, new card: ${session.isNewCard}, at ${session.location ?? "unknown"})`,
         );
         return true;
     }
@@ -563,7 +563,7 @@ export class PopupController {
             this.diag(`rating received (${String(event)}); writing...`);
             const started = Date.now();
             const ratePromise = session.rate(response).then(
-                () => "ok" as const,
+                (r): RateResult | "error" => r,
                 (e: unknown) => {
                     console.error("[sr-popup-review] failed to save review", e);
                     return "error" as const;
@@ -587,11 +587,29 @@ export class PopupController {
                 new Notice(t("ratingTimeout"));
                 break;
             }
-            this.diag(`review (${String(event)}) written in ${Date.now() - started} ms`);
+            const where = session.location ?? "unknown location";
+            const elapsed = Date.now() - started;
+            const notSaved = result === "notSaved";
+            if (notSaved) {
+                this.diag(
+                    `ERROR: review (${String(event)}) NOT saved to ${where}: the card's text changed after the popup opened`,
+                );
+                new Notice(t("ratingNotSaved"));
+            } else if (result === "saved") {
+                this.diag(`review (${String(event)}) saved to ${where} in ${elapsed} ms`);
+            } else {
+                this.diag(
+                    `review (${String(event)}) written to ${where} in ${elapsed} ms (not verified)`,
+                );
+            }
             this.markSessionEnd();
             if (gen !== this.generation) return;
             try {
-                await this.execInPopup("window.__showDone && window.__showDone()");
+                await this.execInPopup(
+                    notSaved
+                        ? "window.__showNotSaved && window.__showNotSaved()"
+                        : "window.__showDone && window.__showDone()",
+                );
             } catch {
                 /* window may already be gone; the review is saved either way */
             }
@@ -1018,6 +1036,14 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
         byAction[b.getAttribute("data-action")] = b;
         b.addEventListener("click", function () { choose(b.getAttribute("data-action")); });
     });
+    window.__showNotSaved = function () {
+        if (savingTimer) clearTimeout(savingTimer);
+        var done = document.getElementById("done");
+        done.textContent = "⚠ " + ${JSON.stringify(t("popupNotSaved"))};
+        done.style.color = "var(--again)";
+        done.hidden = false;
+        finishAfter(2500);
+    };
     window.__showDone = function () {
         if (savingTimer) clearTimeout(savingTimer);
         document.getElementById("done").hidden = false;
