@@ -90,15 +90,18 @@ The settings tab also shows whether the Spaced Repetition integration is working
 
 ## Changelog
 
-### Unreleased
+### 1.5.0 — 2026-10-04
 
-- Fixed: when a card's text was edited while its popup was open, Spaced Repetition silently skipped saving the rating but the popup reported it as saved. The popup now verifies the save; if the card was edited, it finds the edited card and saves the rating to it automatically (through Spaced Repetition), and only tells you when the card cannot be identified
-- **Show the popup on a local page**: mirror the popup, exactly as it appears, to a local web page for OBS (browser source), screen sharing, or another browser window (#8)
-- Multi-line cards are easier to read: each line of a card gets a little space before the next, and long lines that wrap are indented, so a wrap no longer looks like a new line
 - **Global shortcut**: set a system-wide key combination in settings to show a popup even while Obsidian is in the background. Obsidian itself stays in the background, and the popup takes keyboard focus so you can answer right away (#7)
+- **Show the popup on a local page**: mirror the popup, exactly as it appears, to a local web page for OBS (browser source), screen sharing, or another browser window. The popup is scaled to fill the page by width or height (#8)
 - **New cards are mixed in with due cards** in proportion to how many of each are available (within the daily limit). Previously new cards appeared only once nothing was due, so a due backlog could stop them entirely
 - The popup header shows how many cards you reviewed today (including reviews in Spaced Repetition itself), alongside the remaining due and new cards
+- Multi-line cards are easier to read: each line of a card gets a little space before the next, and long lines that wrap are indented, so a wrap no longer looks like a new line
+- The popup window has a fixed title, "SR Popup Review", so window-capture and automation tools can find it
 - When Obsidian is not focused, the result of a manual request (e.g. "no cards to review right now") is also shown as an OS notification
+- Fixed: when a card's text was edited while its popup was open, Spaced Repetition silently skipped saving the rating but the popup reported it as saved. The popup now verifies the save; if the card was edited, it finds the edited card and saves the rating to it automatically (through Spaced Repetition), and only tells you when the card cannot be identified
+- Fixed: after rating, pausing or snoozing, the plugin could take up to 30 seconds to notice the popup had closed
+
 ### 1.4.0 — 2026-09-26
 
 - Status-bar button to show a review popup right away
