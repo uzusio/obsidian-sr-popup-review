@@ -1,5 +1,5 @@
 import { App, Component, MarkdownRenderer, Notice } from "obsidian";
-import { IntervalPreview, RateResult, RatingKey, ReviewResponse, ReviewResponseValue, ReviewSession } from "./sr-bridge";
+import { IntervalPreview, RateOutcome, RatingKey, ReviewResponse, ReviewResponseValue, ReviewSession } from "./sr-bridge";
 import type { GlobalShortcutLike } from "./global-shortcut";
 import { t } from "./i18n";
 
@@ -563,7 +563,7 @@ export class PopupController {
             this.diag(`rating received (${String(event)}); writing...`);
             const started = Date.now();
             const ratePromise = session.rate(response).then(
-                (r): RateResult | "error" => r,
+                (r): RateOutcome | "error" => r,
                 (e: unknown) => {
                     console.error("[sr-popup-review] failed to save review", e);
                     return "error" as const;
@@ -589,13 +589,19 @@ export class PopupController {
             }
             const where = session.location ?? "unknown location";
             const elapsed = Date.now() - started;
-            const notSaved = result === "notSaved";
+            const notSaved = result.result === "notSaved";
+            const resaved = result.result === "resaved";
             if (notSaved) {
                 this.diag(
                     `ERROR: review (${String(event)}) NOT saved to ${where}: the card's text changed after the popup opened`,
                 );
+                if (result.retryFailure) this.diag(`retry: ${result.retryFailure}`);
                 new Notice(t("ratingNotSaved"));
-            } else if (result === "saved") {
+            } else if (resaved) {
+                this.diag(
+                    `review (${String(event)}) re-saved to ${result.location ?? "unknown location"} after the card was edited (was ${where}) in ${elapsed} ms`,
+                );
+            } else if (result.result === "saved") {
                 this.diag(`review (${String(event)}) saved to ${where} in ${elapsed} ms`);
             } else {
                 this.diag(
@@ -608,7 +614,9 @@ export class PopupController {
                 await this.execInPopup(
                     notSaved
                         ? "window.__showNotSaved && window.__showNotSaved()"
-                        : "window.__showDone && window.__showDone()",
+                        : resaved
+                          ? `window.__showDone && window.__showDone(${JSON.stringify("✓ " + t("savedAfterEdit"))})`
+                          : "window.__showDone && window.__showDone()",
                 );
             } catch {
                 /* window may already be gone; the review is saved either way */
@@ -1044,10 +1052,13 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
         done.hidden = false;
         finishAfter(2500);
     };
-    window.__showDone = function () {
+    window.__showDone = function (text) {
         if (savingTimer) clearTimeout(savingTimer);
-        document.getElementById("done").hidden = false;
-        finishAfter(700);
+        var done = document.getElementById("done");
+        if (typeof text === "string") done.textContent = text;
+        done.hidden = false;
+        // A custom message (saved to the edited card) is longer: give it time to be read.
+        finishAfter(typeof text === "string" ? 1500 : 700);
     };
     document.addEventListener("keydown", function (e) {
         if (e.key === "Escape") { requestClose(); return; }

@@ -1,3 +1,4 @@
+import { diffArrays } from "diff";
 import { App, MarkdownView, TFile, moment } from "obsidian";
 
 const SR_PLUGIN_ID = "obsidian-spaced-repetition";
@@ -33,6 +34,8 @@ interface SRDeck {
     subdecks?: unknown;
     /** Every scheduled card of this deck (including ones not yet due). */
     dueRepItems?: unknown;
+    /** Every new (never reviewed) card of this deck. */
+    newRepItems?: unknown;
     getTopicPath?: () => SRTopicPath | undefined;
     getDistinctRepItemCount?: (repItemType: number, includeSubdecks: boolean) => number;
 }
@@ -52,11 +55,20 @@ interface SRNote {
     file?: SRNoteFile;
 }
 
+/** SR's ParsedQuestionInfo: the question's 0-based line range in its note (inclusive). */
+interface SRParsedQuestionInfo {
+    firstLineNum?: unknown;
+    lastLineNum?: unknown;
+}
+
 interface SRQuestion {
     note?: SRNote;
     /** Getter over parsedQuestionInfo.firstLineNum — may throw. */
     lineNo?: unknown;
     questionText?: SRQuestionText;
+    parsedQuestionInfo?: SRParsedQuestionInfo;
+    /** The cards this question expands to (e.g. both directions of a bidirectional card). */
+    cards?: unknown;
 }
 
 interface SRCard {
@@ -81,7 +93,10 @@ interface SRSequencer {
     currentCard?: SRCard | null;
     currentDeck?: SRDeck | null;
     processReview?: (response: number) => Promise<void>;
+    /** Drops the current card's whole question (all sibling cards) from the in-memory queue. */
     skipCurrentCard?: () => void;
+    /** Drops only the current card from the in-memory queue (its siblings stay). */
+    deleteCurrentCard?: () => void;
     /** Same API the SR modal uses when the user picks a deck from the deck list. */
     setCurrentDeck?: (topicPath: SRTopicPath) => void;
     /** Pure preview of the schedule a rating would produce (what SR's own buttons show). */
@@ -186,6 +201,93 @@ function previewFromSchedule(
     return { unit: "hours", value: Math.max(1, Math.ceil(totalMinutes / 60)) };
 }
 
+/** An inclusive, 0-based line range in a note. */
+interface LineRange {
+    first: number;
+    last: number;
+}
+
+/**
+ * Maps a line range of `oldText` onto `newText` with a line diff. Lines of the
+ * range that survived unchanged give the new range (their min..max). When none
+ * survived (every line of the card was edited), the nearest unchanged lines
+ * before and after the range act as anchors and the lines strictly between them
+ * become the new range. Returns null when the range cannot be placed (deleted).
+ */
+function mapLineRange(oldText: string, newText: string, range: LineRange): LineRange | null {
+    const oldLines = oldText.split("\n");
+    const newLines = newText.split("\n");
+    if (range.first < 0 || range.last < range.first || range.last >= oldLines.length) return null;
+    const oldToNew = new Array<number>(oldLines.length).fill(-1);
+    let o = 0;
+    let n = 0;
+    for (const part of diffArrays(oldLines, newLines)) {
+        if (part.added) {
+            n += part.count;
+        } else if (part.removed) {
+            o += part.count;
+        } else {
+            for (let i = 0; i < part.count; i++) oldToNew[o + i] = n + i;
+            o += part.count;
+            n += part.count;
+        }
+    }
+    let lo = Number.POSITIVE_INFINITY;
+    let hi = -1;
+    for (let i = range.first; i <= range.last; i++) {
+        const mapped = oldToNew[i];
+        if (mapped < 0) continue;
+        lo = Math.min(lo, mapped);
+        hi = Math.max(hi, mapped);
+    }
+    if (hi >= 0) return { first: lo, last: hi };
+    let before = -1;
+    for (let i = range.first - 1; i >= 0; i--) {
+        if (oldToNew[i] >= 0) {
+            before = oldToNew[i];
+            break;
+        }
+    }
+    let after = newLines.length;
+    for (let i = range.last + 1; i < oldLines.length; i++) {
+        if (oldToNew[i] >= 0) {
+            after = oldToNew[i];
+            break;
+        }
+    }
+    const first = before + 1;
+    const last = after - 1;
+    return first <= last ? { first, last } : null;
+}
+
+/** The question's line range from SR's parsedQuestionInfo, or null when unusable. */
+function questionLineRange(question: SRQuestion | undefined): LineRange | null {
+    const info = question?.parsedQuestionInfo;
+    const first = info?.firstLineNum;
+    const last = info?.lastLineNum;
+    if (typeof first !== "number" || typeof last !== "number") return null;
+    if (!Number.isInteger(first) || !Number.isInteger(last) || first < 0 || last < first) return null;
+    return { first, last };
+}
+
+/**
+ * What the popup remembers about its card when it opens, so a rating that SR
+ * could not write (the card was edited meanwhile) can be re-targeted at the
+ * edited card: the note text, the card's line range and its index among the
+ * cards of its question.
+ */
+interface CardSnapshot {
+    path: string;
+    text: string;
+    range: LineRange;
+    cardIndex: number;
+    /** The deck the card was drawn from (where the re-save looks for it). */
+    topicPath: SRTopicPath | undefined;
+}
+
+/** Outcome of the automatic re-save after an edit. */
+type ResaveOutcome = { ok: true; location: string } | { ok: false; reason: string };
+
 /** Where a card came from, resolved from SR's internals while the session is built. */
 interface NoteSource {
     path: string;
@@ -219,8 +321,18 @@ export interface IntervalPreview {
  * found in the note) without throwing, so the bridge verifies it afterwards:
  * "saved" = the note contains the new card text, "notSaved" = it does not,
  * "unknown" = could not be verified (treated as success by callers).
+ * "resaved" = the first write missed because the card had been edited, and the
+ * rating was then written (through SR again) to the edited card and verified.
  */
-export type RateResult = "saved" | "notSaved" | "unknown";
+export type RateResult = "saved" | "resaved" | "notSaved" | "unknown";
+
+export interface RateOutcome {
+    result: RateResult;
+    /** Diagnostics: "path:line" (1-based) the rating was written to; for "resaved" the edited card. */
+    location: string | null;
+    /** Diagnostics (English): why the automatic re-save was not possible ("notSaved" only). */
+    retryFailure?: string;
+}
 
 export interface ReviewSession {
     /** Markdown of the question side (cloze deletions already masked by SR's parser). */
@@ -244,8 +356,12 @@ export interface ReviewSession {
      * unavailable (incompatible internals) — the popup then draws single-line buttons.
      */
     intervals: Record<RatingKey, IntervalPreview | null> | null;
-    /** Writes the review through SR's own pipeline (identical to pressing a button in its modal). */
-    rate(response: ReviewResponseValue): Promise<RateResult>;
+    /**
+     * Writes the review through SR's own pipeline (identical to pressing a button in its modal).
+     * If the write missed because the card was edited while the popup was open, the edited
+     * card is located and the rating is written to it through SR once more ("resaved").
+     */
+    rate(response: ReviewResponseValue): Promise<RateOutcome>;
     /** Diagnostics: "path:line" (line 1-based) of the card in its note; null when unknown. */
     location: string | null;
     /** Opens the card's source note in Obsidian at the card's line (mirrors SR's own
@@ -469,6 +585,9 @@ export class SRBridge {
         // Resolved now, while the sequencer still points at this card: the popup
         // may ask for it much later. null = the menu item is not offered at all.
         const noteSource = this.resolveNoteSource(card);
+        // Taken now, while the note still matches what SR parsed: lets a rating
+        // that misses because of an edit be re-targeted at the edited card.
+        const snapshot = await this.takeSnapshot(sequencer, card, noteSource);
 
         let dueCount = 0;
         let newCount = 0;
@@ -500,6 +619,7 @@ export class SRBridge {
         const intervals = this.previewIntervals(sequencer, card, srSettings);
 
         const boundSequencer = sequencer;
+        const location = noteSource ? `${noteSource.path}:${noteSource.line + 1}` : null;
         return {
             front: card.front.trimStart(),
             back: card.back,
@@ -512,11 +632,23 @@ export class SRBridge {
             reviewedToday,
             buttonLabels,
             intervals,
-            rate: async (response: ReviewResponseValue): Promise<RateResult> => {
+            rate: async (response: ReviewResponseValue): Promise<RateOutcome> => {
                 await processReview.call(boundSequencer, response);
-                return this.verifyWrite(card, noteSource?.path ?? null);
+                const result = await this.verifyWrite(card, noteSource?.path ?? null);
+                if (result !== "notSaved") return { result, location };
+                if (!snapshot) {
+                    return {
+                        result,
+                        location,
+                        retryFailure: "not attempted (no snapshot of the card from when the popup opened)",
+                    };
+                }
+                const resave = await this.resaveAfterEdit(sr, snapshot, response);
+                return resave.ok
+                    ? { result: "resaved", location: resave.location }
+                    : { result: "notSaved", location, retryFailure: resave.reason };
             },
-            location: noteSource ? `${noteSource.path}:${noteSource.line + 1}` : null,
+            location,
             openNote: noteSource ? () => this.openNoteAt(noteSource) : null,
         };
     }
@@ -538,6 +670,150 @@ export class SRBridge {
         } catch {
             return "unknown";
         }
+    }
+
+    /**
+     * Records the card's note text, line range and index within its question.
+     * Returns null (no automatic re-save later) when any of it is unavailable or
+     * the note no longer contains the card text SR parsed (it changed between
+     * SR's sync and this read, so the line range would not describe it).
+     */
+    private async takeSnapshot(
+        sequencer: SRSequencer,
+        card: SRCard,
+        noteSource: NoteSource | null,
+    ): Promise<CardSnapshot | null> {
+        try {
+            if (!noteSource) return null;
+            const question = card.question;
+            const range = questionLineRange(question);
+            const cards = question?.cards;
+            const original = question?.questionText?.original;
+            if (!range || !Array.isArray(cards) || typeof original !== "string") return null;
+            const cardIndex = (cards as unknown[]).indexOf(card);
+            if (cardIndex < 0) return null;
+            const file = this.app.vault.getAbstractFileByPath(noteSource.path);
+            if (!(file instanceof TFile)) return null;
+            const text = await this.app.vault.read(file);
+            if (original.length === 0 || !text.includes(original)) return null;
+            const deck = sequencer.currentDeck;
+            const topicPath =
+                typeof deck?.getTopicPath === "function" ? deck.getTopicPath() : undefined;
+            return { path: noteSource.path, text, range, cardIndex, topicPath };
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * The first write missed because the card was edited while the popup was
+     * open. Locates the edited card and writes the same rating to it through
+     * SR's own processReview once more — never by writing schedule text itself.
+     * Anything uncertain (note gone, card deleted, ambiguous match, card not in
+     * the queue) gives up with a reason instead of guessing.
+     */
+    private async resaveAfterEdit(
+        sr: SRPluginLike,
+        snapshot: CardSnapshot,
+        response: ReviewResponseValue,
+    ): Promise<ResaveOutcome> {
+        try {
+            const file = this.app.vault.getAbstractFileByPath(snapshot.path);
+            if (!(file instanceof TFile)) return { ok: false, reason: "note not found (deleted or renamed)" };
+            const current = await this.app.vault.read(file);
+            const range = mapLineRange(snapshot.text, current, snapshot.range);
+            if (!range) return { ok: false, reason: "card range deleted" };
+
+            // Re-sync so SR parses the edited note, and take a fresh queue.
+            const sequencer = await this.acquireSequencer(sr);
+            if (!sequencer) {
+                return { ok: false, reason: "Spaced Repetition is busy or returned no review queue" };
+            }
+            const processReview = sequencer.processReview;
+            if (typeof processReview !== "function") {
+                return { ok: false, reason: "processReview not found" };
+            }
+
+            // Decided on the whole vault's tree (not only on what the queue walk
+            // happens to pass), so a second card in the range is never missed.
+            const questions = this.findQuestionsInRange(sr, snapshot.path, range);
+            if (!questions) return { ok: false, reason: "deck tree unavailable" };
+            if (questions.length !== 1) {
+                return { ok: false, reason: `${questions.length} matching questions` };
+            }
+            const question = questions[0];
+            const cards = question.cards;
+            const target =
+                Array.isArray(cards) && snapshot.cardIndex < cards.length
+                    ? ((cards as unknown[])[snapshot.cardIndex] as SRCard | null | undefined)
+                    : undefined;
+            if (!target) return { ok: false, reason: `card #${snapshot.cardIndex + 1} not found in the edited question` };
+
+            // Bring the sequencer onto the target card, the same way openSession
+            // walks the queue (in-memory only). Sibling cards of the target are
+            // dropped one by one so the target itself stays in the queue.
+            if (snapshot.topicPath && typeof sequencer.setCurrentDeck === "function") {
+                try {
+                    sequencer.setCurrentDeck(snapshot.topicPath);
+                } catch {
+                    // The deck itself is gone after the edit (e.g. its tag was changed).
+                    return { ok: false, reason: "card's deck not found after the edit" };
+                }
+            }
+            let skips = 0;
+            while (sequencer.hasCurrentCard === true && sequencer.currentCard !== target) {
+                const isSibling = sequencer.currentCard?.question === question;
+                const drop = isSibling ? sequencer.deleteCurrentCard : sequencer.skipCurrentCard;
+                if (typeof drop !== "function" || ++skips > MAX_FILTER_SKIPS) break;
+                drop.call(sequencer);
+            }
+            if (sequencer.hasCurrentCard !== true || sequencer.currentCard !== target) {
+                return { ok: false, reason: "card not found in queue" };
+            }
+
+            await processReview.call(sequencer, response);
+            const verified = await this.verifyWrite(target, snapshot.path);
+            if (verified !== "saved") return { ok: false, reason: `re-save verification: ${verified}` };
+            const line = questionLineRange(question)?.first ?? range.first;
+            return { ok: true, location: `${snapshot.path}:${line + 1}` };
+        } catch (e) {
+            console.error("[sr-popup-review] automatic re-save after an edit failed", e);
+            return { ok: false, reason: "exception (see console)" };
+        }
+    }
+
+    /**
+     * Every distinct question of note `path` (from SR's full deck tree, so cards
+     * not due are included) whose line range overlaps `range`. A question that
+     * sits in several decks is counted once. null when the tree is unavailable.
+     */
+    private findQuestionsInRange(sr: SRPluginLike, path: string, range: LineRange): SRQuestion[] | null {
+        const found = new Set<SRQuestion>();
+        const visit = (items: unknown): void => {
+            if (!Array.isArray(items)) return;
+            for (const item of items as unknown[]) {
+                const question = (item as SRCard | null)?.question;
+                if (!question || found.has(question) || question.note?.file?.path !== path) continue;
+                const r = questionLineRange(question);
+                if (r && r.first <= range.last && r.last >= range.first) found.add(question);
+            }
+        };
+        const walk = (deck: SRDeck): void => {
+            visit(deck.newRepItems);
+            visit(deck.dueRepItems);
+            if (!Array.isArray(deck.subdecks)) return;
+            for (const sub of deck.subdecks as unknown[]) {
+                if (sub) walk(sub);
+            }
+        };
+        try {
+            const root = sr.dataManager?.osrCore?.fullDeckTree;
+            if (!root) return null;
+            walk(root);
+        } catch {
+            return null;
+        }
+        return [...found];
     }
 
     /**
