@@ -6,6 +6,10 @@ import { Scheduler } from "./scheduler";
 import { DEFAULT_SETTINGS, SRPopupSettings, SRPopupSettingTab } from "./settings";
 import { setLocaleOverride, t } from "./i18n";
 import { GlobalShortcutManager, ShortcutResult } from "./global-shortcut";
+import { MirrorServer, MirrorStartResult } from "./mirror-server";
+
+/** Debounce for port edits, so typing "27281" does not briefly bind 2728. */
+const MIRROR_PORT_RESTART_MS = 800;
 
 export default class SRPopupPlugin extends Plugin {
     declare settings: SRPopupSettings;
@@ -16,6 +20,14 @@ export default class SRPopupPlugin extends Plugin {
     globalShortcut!: GlobalShortcutManager;
     /** Result of the last apply() of settings.globalShortcut; drives the settings tab's status message. */
     globalShortcutState: ShortcutResult = "ok";
+    mirrorServer!: MirrorServer;
+    /** Result of the last local-page start; "off" while disabled (or starting). Drives the settings tab. */
+    mirrorState: MirrorStartResult | "off" = "off";
+    /** Serializes start/stop so overlapping setting changes cannot race on the port. */
+    private mirrorOp: Promise<void> = Promise.resolve();
+    private mirrorPortTimer: number | null = null;
+    /** Set in onunload: a start still queued in mirrorOp must not leave a server behind. */
+    private unloaded = false;
     private statusBarIconEl: HTMLElement | null = null;
 
     async onload(): Promise<void> {
@@ -27,6 +39,14 @@ export default class SRPopupPlugin extends Plugin {
         );
         void this.diag.init();
         this.diag.log(`plugin loaded (v${this.manifest.version})`);
+        this.mirrorServer = new MirrorServer(
+            (message) => this.diag.log(message),
+            () => {
+                const basePath = (this.app.vault.adapter as { getBasePath?: () => string }).getBasePath?.();
+                return typeof basePath === "string" && basePath !== "" ? basePath : null;
+            },
+            () => this.settings.mirrorEnabled && this.mirrorState === "ok",
+        );
         this.popup = new PopupController(
             this.app,
             this,
@@ -54,6 +74,7 @@ export default class SRPopupPlugin extends Plugin {
                 heightFront: this.settings.popupHeightFront,
                 heightRevealed: this.settings.popupHeightRevealed,
             }),
+            this.mirrorServer,
         );
         this.scheduler = new Scheduler(this);
         this.globalShortcut = new GlobalShortcutManager(
@@ -75,10 +96,13 @@ export default class SRPopupPlugin extends Plugin {
         // registration) can be torn down before the window goes away.
         this.registerDomEvent(window, "beforeunload", () => {
             this.globalShortcut.unregister();
+            this.mirrorServer.stop();
             if (!this.popup.isOpen) return;
             this.diag.log("main window unloading; closing popup");
             this.popup.close();
         });
+
+        if (this.settings.mirrorEnabled) void this.restartMirror();
 
         this.addSettingTab(new SRPopupSettingTab(this.app, this));
         this.addCommand({
@@ -129,8 +153,56 @@ export default class SRPopupPlugin extends Plugin {
     }
 
     onunload(): void {
+        this.unloaded = true;
         this.globalShortcut.unregister();
+        if (this.mirrorPortTimer !== null) window.clearTimeout(this.mirrorPortTimer);
         this.popup.close();
+        this.mirrorServer.stop();
+    }
+
+    /** The local page's URL for the configured port. */
+    mirrorUrl(): string {
+        return `http://127.0.0.1:${this.settings.mirrorPort}/`;
+    }
+
+    async setMirrorEnabled(enabled: boolean): Promise<void> {
+        this.settings.mirrorEnabled = enabled;
+        await this.saveSettings();
+        await this.restartMirror();
+    }
+
+    /** Saves the port at once; the server follows after a short debounce. */
+    async setMirrorPort(port: number): Promise<void> {
+        this.settings.mirrorPort = port;
+        await this.saveSettings();
+        if (this.mirrorPortTimer !== null) window.clearTimeout(this.mirrorPortTimer);
+        this.mirrorPortTimer = window.setTimeout(() => {
+            this.mirrorPortTimer = null;
+            void this.restartMirror();
+        }, MIRROR_PORT_RESTART_MS);
+    }
+
+    /** (Re)starts or stops the local page to match the settings. */
+    private restartMirror(): Promise<void> {
+        this.mirrorOp = this.mirrorOp
+            .then(async () => {
+                this.mirrorState = "off";
+                if (this.unloaded || !this.settings.mirrorEnabled) {
+                    this.mirrorServer.stop();
+                    return;
+                }
+                const result = await this.mirrorServer.start(this.settings.mirrorPort);
+                if (this.unloaded) {
+                    this.mirrorServer.stop();
+                    return;
+                }
+                this.mirrorState = result;
+            })
+            .catch((e: unknown) => {
+                this.mirrorState = "error";
+                this.diag.log(`ERROR: local page: restart failed: ${String(e)}`);
+            });
+        return this.mirrorOp;
     }
 
     /**

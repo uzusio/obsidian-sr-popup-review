@@ -11,6 +11,7 @@ import {
     MIN_WIDTH,
 } from "./popup";
 import type { ShortcutResult } from "./global-shortcut";
+import { DEFAULT_MIRROR_PORT, MIRROR_PORT_MAX, MIRROR_PORT_MIN, isValidMirrorPort } from "./mirror-server";
 import { setLocaleOverride, t } from "./i18n";
 
 export interface SRPopupSettings {
@@ -20,6 +21,9 @@ export interface SRPopupSettings {
     paused: boolean;
     /** Electron accelerator for the system-wide show-popup shortcut; "" = off. */
     globalShortcut: string;
+    /** Mirror the popup to a local web page (http://127.0.0.1:<mirrorPort>/). */
+    mirrorEnabled: boolean;
+    mirrorPort: number;
     intervalMinutes: number;
     quietHoursEnabled: boolean;
     quietHoursStart: string;
@@ -53,6 +57,8 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
     language: "-",
     paused: false,
     globalShortcut: "",
+    mirrorEnabled: false,
+    mirrorPort: DEFAULT_MIRROR_PORT,
     intervalMinutes: 120,
     quietHoursEnabled: true,
     quietHoursStart: "01:00",
@@ -216,6 +222,31 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 render: (setting) => this.renderGlobalShortcut(setting),
             },
             {
+                name: t("settingsMirror"),
+                desc: t("settingsMirrorDesc"),
+                control: { type: "toggle", key: "mirrorEnabled" },
+            },
+            {
+                name: t("settingsMirrorPort"),
+                desc: t("settingsMirrorPortDesc"),
+                visible: () => this.plugin.settings.mirrorEnabled,
+                control: {
+                    type: "number",
+                    key: "mirrorPort",
+                    min: MIRROR_PORT_MIN,
+                    max: MIRROR_PORT_MAX,
+                    step: 1,
+                    validate: (v) => {
+                        if (!isValidMirrorPort(v)) return t("settingsMirrorPortInvalid");
+                    },
+                },
+            },
+            {
+                name: t("settingsMirrorUrl"),
+                visible: () => this.plugin.settings.mirrorEnabled,
+                render: (setting) => this.renderMirrorUrl(setting),
+            },
+            {
                 name: t("settingsInterval"),
                 desc: t("settingsIntervalDesc"),
                 control: {
@@ -363,6 +394,19 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 this.plugin.settings.newCardsMode = value;
                 await this.plugin.saveSettings();
                 this.update(); // show/hide the per-day cap
+                return;
+            }
+            case "mirrorEnabled": {
+                if (typeof value !== "boolean") return;
+                await this.plugin.setMirrorEnabled(value); // saves and starts/stops the server
+                this.update(); // show/hide the port and URL rows
+                return;
+            }
+            case "mirrorPort": {
+                // No update() here: rebuilding the tab would steal focus from the
+                // port field while typing; the URL row refreshes itself.
+                if (!isValidMirrorPort(value)) return;
+                await this.plugin.setMirrorPort(value);
                 return;
             }
             case "intervalMinutes":
@@ -593,6 +637,55 @@ export class SRPopupSettingTab extends PluginSettingTab {
         return () => {
             if (recording) recording.cancel();
         };
+    }
+
+    /**
+     * The local page's URL with the server's state (running / port in use /
+     * unavailable), refreshed while the tab is open, plus a copy button.
+     */
+    private renderMirrorUrl(setting: Setting): () => void {
+        const statusEl = setting.descEl.createDiv({ cls: "sr-popup-shortcut-status" });
+        let current: string | null = null;
+        const apply = (): void => {
+            const url = this.plugin.mirrorUrl();
+            let text: string;
+            let warning = true;
+            switch (this.plugin.mirrorState) {
+                case "ok":
+                    text = t("mirrorRunning", { url });
+                    warning = false;
+                    break;
+                case "inUse":
+                    text = t("mirrorInUse", { port: this.plugin.settings.mirrorPort });
+                    break;
+                case "unavailable":
+                    text = t("mirrorUnavailable");
+                    break;
+                case "error":
+                    text = t("mirrorError");
+                    break;
+                default:
+                    text = url; // starting
+                    warning = false;
+            }
+            const key = `${warning ? "!" : ""}${text}`;
+            if (key === current) return; // keep the user's text selection intact
+            current = key;
+            statusEl.setText(text);
+            statusEl.toggleClass("mod-warning", warning);
+        };
+        apply();
+        const timer = window.setInterval(apply, 1_000);
+        setting.addExtraButton((btn) => {
+            btn.setIcon("copy");
+            btn.setTooltip(t("mirrorCopy"));
+            btn.onClick(() => {
+                navigator.clipboard.writeText(this.plugin.mirrorUrl()).catch((e: unknown) => {
+                    console.error("[sr-popup-review] failed to copy the local page URL", e);
+                });
+            });
+        });
+        return () => window.clearInterval(timer);
     }
 
     private statusDesc(): string {

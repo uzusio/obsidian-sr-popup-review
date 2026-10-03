@@ -60,6 +60,85 @@ export function getRemote(): ElectronRemoteLike | null {
     }
 }
 
+/** One DOM snapshot of the popup, as replayed by the local page. */
+export interface MirrorState {
+    body: string;
+    bodyClass: string;
+    w: number;
+    h: number;
+    scroll: number;
+}
+
+/**
+ * Receiver of the popup's display for the "show the popup on a local page"
+ * feature. The popup only reports what it shows; it knows nothing about how
+ * (or whether) the display is served.
+ */
+export interface MirrorSink {
+    isEnabled(): boolean;
+    open(html: string): void;
+    state(s: MirrorState): void;
+    close(): void;
+}
+
+function isMirrorState(value: unknown): value is MirrorState {
+    if (!value || typeof value !== "object") return false;
+    const v = value as Record<string, unknown>;
+    return (
+        typeof v.body === "string" &&
+        typeof v.bodyClass === "string" &&
+        typeof v.w === "number" &&
+        typeof v.h === "number" &&
+        typeof v.scroll === "number"
+    );
+}
+
+/**
+ * Appended to the popup's script only while mirroring is on: reports DOM
+ * snapshots through a long poll (window.__nextMirror), coalesced to one per
+ * MIRROR_THROTTLE_MS; a snapshot not yet collected is replaced by the newer one.
+ */
+const MIRROR_THROTTLE_MS = 30;
+const MIRROR_SCRIPT = `(function () {
+    var content = document.querySelector(".content");
+    var pending = null;
+    var timer = null;
+    var waiters = [];
+    function snapshot() {
+        return {
+            body: document.body.innerHTML,
+            bodyClass: document.body.className,
+            w: window.innerWidth,
+            h: window.innerHeight,
+            scroll: content ? content.scrollTop : 0
+        };
+    }
+    function flush() {
+        timer = null;
+        var s = snapshot();
+        if (waiters.length) waiters.shift()(s);
+        else pending = s;
+    }
+    function queue() {
+        if (timer === null) timer = setTimeout(flush, ${MIRROR_THROTTLE_MS});
+    }
+    window.__nextMirror = function () {
+        if (pending) {
+            var s = pending;
+            pending = null;
+            return Promise.resolve(s);
+        }
+        return new Promise(function (resolve) { waiters.push(resolve); });
+    };
+    new MutationObserver(queue).observe(document.body, {
+        subtree: true, childList: true, attributes: true, characterData: true
+    });
+    window.addEventListener("resize", queue);
+    if (content) content.addEventListener("scroll", queue, { passive: true });
+    queue();
+})();
+`;
+
 /** Built-in size, used until the user configures one in the settings tab. */
 export const DEFAULT_WIDTH = 400;
 export const DEFAULT_HEIGHT_FRONT = 260;
@@ -163,6 +242,8 @@ export class PopupController {
             heightFront: number | null;
             heightRevealed: number | null;
         },
+        /** Optional receiver of the popup's display (local page); null = none. */
+        private mirror: MirrorSink | null = null,
     ) {}
 
     get isOpen(): boolean {
@@ -193,7 +274,10 @@ export class PopupController {
         this.session = session;
         this.revealed = false;
 
-        const html = await this.buildHtml(session, showDeckName, autoCloseSeconds);
+        // Decided once per popup: the snapshot script is only in this popup's
+        // HTML when mirroring was on at build time.
+        const mirror = this.mirror?.isEnabled() ? this.mirror : null;
+        const html = await this.buildHtml(session, showDeckName, autoCloseSeconds, mirror !== null);
         if (gen !== this.generation) return false;
         const sizes = this.resolveSizes();
         let win: BrowserWindowLike;
@@ -269,6 +353,10 @@ export class PopupController {
         this.wasShown = true;
         this.heartbeatTimer = window.setInterval(() => this.heartbeatTick(gen), HEARTBEAT_SEND_MS);
         void this.eventLoop(gen);
+        if (mirror) {
+            mirror.open(html);
+            void this.mirrorLoop(gen, mirror);
+        }
         this.diag(
             `popup shown (deck: ${session.deckName ?? "-"}, due: ${session.dueCount}, new card: ${session.isNewCard})`,
         );
@@ -485,6 +573,24 @@ export class PopupController {
     }
 
     /**
+     * Long poll for the popup's DOM snapshots (same pattern as eventLoop),
+     * forwarded to the mirror sink. Ends when the window goes away or the
+     * popup is superseded.
+     */
+    private async mirrorLoop(gen: number, mirror: MirrorSink): Promise<void> {
+        while (gen === this.generation && this.isOpen) {
+            let snapshot: unknown;
+            try {
+                snapshot = await this.execInPopup("window.__nextMirror()");
+            } catch {
+                return; // window closed or content gone
+            }
+            if (gen !== this.generation) return;
+            if (isMirrorState(snapshot)) mirror.state(snapshot);
+        }
+    }
+
+    /**
      * Configured size with the built-in defaults filled in. Also guards against
      * a hand-edited data.json: a non-finite value would reach setBounds as NaN.
      */
@@ -564,6 +670,9 @@ export class PopupController {
         } catch {
             /* already gone */
         }
+        // Unconditional: a no-op when nothing is mirrored, and it must also
+        // clear a popup that started mirroring before the feature was turned off.
+        this.mirror?.close();
         // The popup interval is anchored to the END of a popup, not its start:
         // a popup that sat open past the interval must not be followed by the
         // next one within a minute of being rated/dismissed.
@@ -585,6 +694,8 @@ export class PopupController {
         session: ReviewSession,
         showDeckName: boolean,
         autoCloseSeconds: number,
+        /** Append the DOM-snapshot reporter (local page). Off = HTML unchanged. */
+        withMirror: boolean,
     ): Promise<string> {
         const frontHtml = await this.renderMarkdown(session.front);
         const backHtml = await this.renderMarkdown(session.back);
@@ -880,7 +991,7 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
         if (map[e.key]) choose(map[e.key]);
     });
 })();
-</` + `script>
+${withMirror ? MIRROR_SCRIPT : ""}</` + `script>
 </body>
 </html>`;
     }
