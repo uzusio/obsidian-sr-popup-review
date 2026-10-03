@@ -495,6 +495,8 @@ export class PopupController {
                 this.diag("popup dismissed (nothing written)");
                 break;
             }
+            // The popup finished its confirmation flash (rated / paused / snoozed).
+            if (event === "finished") break;
             if (event === "open-note") {
                 this.diag("popup menu: open note requested");
                 const session = this.session;
@@ -525,8 +527,8 @@ export class PopupController {
                     console.error("[sr-popup-review] failed to apply popup menu action", e);
                 }
                 this.markSessionEnd();
-                // The popup shows its own confirmation and closes itself; the
-                // next __nextEvent() call rejects then and ends the loop.
+                // The popup shows its own confirmation, then emits "finished"
+                // (or closes itself, rejecting the next __nextEvent() call).
                 continue;
             }
             const response = ACTION_TO_RESPONSE[String(event)];
@@ -567,8 +569,8 @@ export class PopupController {
             } catch {
                 /* window may already be gone; the review is saved either way */
             }
-            // The popup shows the done flash and closes itself; the next
-            // __nextEvent() call rejects at that point and ends the loop.
+            // The popup shows the done flash, then emits "finished" (or closes
+            // itself, rejecting the next __nextEvent() call).
         }
         if (gen === this.generation) this.finish();
     }
@@ -891,6 +893,15 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
         emit("close");
         setTimeout(function () { window.close(); }, ${DISMISS_SELF_CLOSE_MS});
     }
+    // After a confirmation flash: tell the plugin first so it ends the session
+    // at once (a pending __nextEvent() call does not always reject when the
+    // window closes itself), then close ourselves if the plugin does not.
+    function finishAfter(ms) {
+        setTimeout(function () {
+            emit("finished");
+            setTimeout(function () { window.close(); }, ${DISMISS_SELF_CLOSE_MS});
+        }, ms);
+    }
     function armAutoClose() {
         if (!autoCloseMs || autoCloseDisabled) return;
         if (autoCloseTimer) clearTimeout(autoCloseTimer);
@@ -956,7 +967,7 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
             done.textContent = "⏸ " + b.textContent;
             done.hidden = false;
             emit(b.getAttribute("data-action"));
-            setTimeout(function () { window.close(); }, 700);
+            finishAfter(700);
         });
     });
     // "Open note" is the odd one out: no confirmation overlay, no self-close —
@@ -979,7 +990,7 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
     window.__showDone = function () {
         if (savingTimer) clearTimeout(savingTimer);
         document.getElementById("done").hidden = false;
-        setTimeout(function () { window.close(); }, 700);
+        finishAfter(700);
     };
     document.addEventListener("keydown", function (e) {
         if (e.key === "Escape") { requestClose(); return; }
