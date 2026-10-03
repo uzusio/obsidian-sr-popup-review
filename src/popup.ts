@@ -140,6 +140,13 @@ const MIRROR_SCRIPT = `(function () {
 })();
 `;
 
+/**
+ * Fixed window title (BrowserWindow option and the page's own <title>, so the
+ * page cannot rename the window). External tools — window capture, automation
+ * hooks — can find the popup by this exact title among Obsidian.exe's windows.
+ */
+export const POPUP_WINDOW_TITLE = "SR Popup Review";
+
 /** Built-in size, used until the user configures one in the settings tab. */
 export const DEFAULT_WIDTH = 400;
 export const DEFAULT_HEIGHT_FRONT = 260;
@@ -321,6 +328,7 @@ export class PopupController {
                 show: false,
                 focusable: true,
                 roundedCorners: true,
+                title: POPUP_WINDOW_TITLE,
                 webPreferences: { nodeIntegration: false, contextIsolation: true },
             });
         } catch (e) {
@@ -790,6 +798,7 @@ export class PopupController {
 <html>
 <head>
 <meta charset="utf-8">
+<title>${POPUP_WINDOW_TITLE}</title>
 <style>
 :root {
     --bg: #ffffff; --fg: #1f2328; --muted: #6a737d; --border: #d0d7de;
