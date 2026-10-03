@@ -111,7 +111,7 @@ const VIEWER_HTML = `<!doctype html>
 <title>Popup Review</title>
 <style>
 html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
-iframe { border: 0; display: block; background: transparent; }
+iframe { border: 0; display: block; background: transparent; transform-origin: 0 0; }
 </style>
 </head>
 <body>
@@ -120,6 +120,20 @@ iframe { border: 0; display: block; background: transparent; }
     var frame = null;
     var loaded = false;
     var pendingState = null;
+    var fitHeight = 0;
+    var lastState = null;
+
+    // Fill the page (e.g. an OBS browser source) by width or height, whichever
+    // runs out first, anchored top-left. The answer-side height is part of the
+    // fit so the card does not shrink when the answer opens.
+    function fit() {
+        if (!frame || !lastState) return;
+        var h = Math.max(lastState.h, fitHeight);
+        var scale = Math.min(window.innerWidth / lastState.w, window.innerHeight / h);
+        if (!isFinite(scale) || scale <= 0) scale = 1;
+        frame.style.transform = "scale(" + scale + ")";
+    }
+    window.addEventListener("resize", fit);
 
     // Card images point at Obsidian's app:// scheme, which a browser cannot
     // load: route them through this server (vault files only).
@@ -133,6 +147,7 @@ iframe { border: 0; display: block; background: transparent; }
         frame = null;
         loaded = false;
         pendingState = null;
+        lastState = null;
     }
     function applyState(s) {
         var doc = frame && frame.contentDocument;
@@ -141,6 +156,8 @@ iframe { border: 0; display: block; background: transparent; }
         doc.body.className = s.bodyClass;
         frame.style.width = s.w + "px";
         frame.style.height = s.h + "px";
+        lastState = s;
+        fit();
         var content = doc.querySelector(".content");
         if (content) content.scrollTop = s.scroll;
     }
@@ -155,6 +172,7 @@ iframe { border: 0; display: block; background: transparent; }
         if (typeof e.data !== "string") { removeFrame(); return; }
         var msg = JSON.parse(e.data);
         removeFrame();
+        fitHeight = typeof msg.fitHeight === "number" ? msg.fitHeight : 0;
         var f = document.createElement("iframe");
         // No allow-scripts: the popup's own script must not run here.
         f.setAttribute("sandbox", "allow-same-origin");
@@ -197,6 +215,7 @@ export class MirrorServer implements MirrorSink {
     private closing: Promise<void> = Promise.resolve();
     /** The popup currently on screen; null when there is none. */
     private currentHtml: string | null = null;
+    private currentFitHeight = 0;
     private currentState: MirrorState | null = null;
 
     constructor(
@@ -316,10 +335,11 @@ export class MirrorServer implements MirrorSink {
         this.diag("local page: stopped");
     }
 
-    open(html: string): void {
+    open(html: string, fitHeight: number): void {
         this.currentHtml = html;
+        this.currentFitHeight = fitHeight;
         this.currentState = null;
-        this.broadcast("open", JSON.stringify({ html }));
+        this.broadcast("open", JSON.stringify({ html, fitHeight }));
     }
 
     state(s: MirrorState): void {
@@ -429,7 +449,11 @@ export class MirrorServer implements MirrorSink {
         }
         // A newly connected viewer starts from the popup currently on screen.
         if (this.currentHtml !== null) {
-            this.send(res, "open", JSON.stringify({ html: this.currentHtml }));
+            this.send(
+                res,
+                "open",
+                JSON.stringify({ html: this.currentHtml, fitHeight: this.currentFitHeight }),
+            );
             if (this.currentState) this.send(res, "state", JSON.stringify(this.currentState));
         }
     }

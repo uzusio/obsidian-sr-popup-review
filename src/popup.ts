@@ -76,7 +76,8 @@ export interface MirrorState {
  */
 export interface MirrorSink {
     isEnabled(): boolean;
-    open(html: string): void;
+    /** `fitHeight`: the answer-side height, so a page scaling the popup to fit does not jump on reveal. */
+    open(html: string, fitHeight: number): void;
     state(s: MirrorState): void;
     close(): void;
 }
@@ -354,7 +355,7 @@ export class PopupController {
         this.heartbeatTimer = window.setInterval(() => this.heartbeatTick(gen), HEARTBEAT_SEND_MS);
         void this.eventLoop(gen);
         if (mirror) {
-            mirror.open(html);
+            mirror.open(html, sizes.heightRevealed);
             void this.mirrorLoop(gen, mirror);
         }
         this.diag(

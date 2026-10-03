@@ -50,7 +50,7 @@ You can also open a popup at any time with the command **"Show review popup now"
 
 You can also set a **global shortcut** (in settings) to show a popup with a key combination, even while Obsidian is in the background — Obsidian itself does not come to the foreground, and the popup takes keyboard focus so you can answer with the keyboard right away.
 
-Turn on **Show the popup on a local page** (in settings) to mirror the popup, exactly as it appears, to a local web page (`http://127.0.0.1:27280/` by default). Open that URL in OBS as a browser source, in a browser window you share, or on another monitor — the page follows the popup live (showing the answer, rating, the menu, scrolling, resizing) and stays transparent while no popup is open. In OBS, add a **Browser** source with the URL and set its width and height at least as large as the popup.
+Turn on **Show the popup on a local page** (in settings) to mirror the popup, exactly as it appears, to a local web page (`http://127.0.0.1:27280/` by default). Open that URL in OBS as a browser source, in a browser window you share, or on another monitor — the page follows the popup live (showing the answer, rating, the menu, scrolling, resizing) and stays transparent while no popup is open. The popup is scaled to fill the page by width or height, whichever runs out first (anchored top-left), so in OBS you can add a **Browser** source with the URL at any size and simply resize it on the canvas.
 
 To pause automatic popups, click the **bell icon in the status bar** (bottom right), use the **"Toggle popup pause"** command, or flip the toggle in settings — all three control the same switch. The manual show-popup-now command still works while paused.
 
