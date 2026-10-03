@@ -591,9 +591,15 @@ export class PopupController {
         const dark = activeDocument.body.classList.contains("theme-dark");
         const headerParts: string[] = [];
         if (showDeckName && session.deckName) headerParts.push(escapeHtml(session.deckName));
-        headerParts.push(
-            escapeHtml(session.isNewCard ? t("newCard") : t("due", { n: session.dueCount })),
-        );
+        if (session.isNewCard) headerParts.push(escapeHtml(t("newCard")));
+        const statsText =
+            session.reviewedToday !== null
+                ? t("headerStats", {
+                      today: session.reviewedToday,
+                      due: session.eligibleDue,
+                      new: session.eligibleNew,
+                  })
+                : t("headerStatsNoToday", { due: session.eligibleDue, new: session.eligibleNew });
         const labels = session.buttonLabels;
         const autoCloseMs = Math.max(0, Math.round(autoCloseSeconds * 1000));
         // Offered only when the bridge could identify the card's source note.
@@ -643,6 +649,10 @@ body {
     padding: 8px 12px; font-size: 12px; color: var(--muted);
     -webkit-app-region: drag; flex: none; user-select: none;
 }
+.hdr-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Shrinks (with an ellipsis) only once the deck name is gone, so ⋯ / ✕ always stay reachable. */
+.hdr-stats { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin: 0 4px 0 8px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.hdr-buttons { flex: none; white-space: nowrap; }
 .closebtn {
     -webkit-app-region: no-drag;
     background: none; border: none; color: var(--muted);
@@ -700,8 +710,9 @@ button.action.chosen { opacity: 1; border-color: currentColor; box-shadow: 0 0 0
 </head>
 <body class="${dark ? "dark" : ""}">
 <div class="header">
-    <span>${headerParts.join(" · ")}</span>
-    <span>
+    <span class="hdr-main">${headerParts.join(" · ")}</span>
+    <span class="hdr-stats">${escapeHtml(statsText)}</span>
+    <span class="hdr-buttons">
         <button class="closebtn" id="menuBtn" title="${escapeHtml(t("menuTooltip"))}">⋯</button>
         <button class="closebtn" id="closeBtn" title="Esc">✕</button>
     </span>

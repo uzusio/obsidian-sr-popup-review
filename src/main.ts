@@ -172,6 +172,10 @@ export default class SRPopupPlugin extends Plugin {
         }
         // "Due cards only" was replaced by the daily new-card budget (newCardsPerDay).
         delete (this.settings as unknown as Record<string, unknown>).dueCardsOnly;
+        // Today's review count is now derived from SR's schedules; drop the keys saved during development.
+        for (const key of ["reviewsTodayDate", "reviewsTodayCount", "reviewsTodayDueCount", "reviewsTodayNewCount"]) {
+            delete (this.settings as unknown as Record<string, unknown>)[key];
+        }
         // v1.0.4 stored only newCardsPerDay (0 = none, no unlimited state) —
         // map it onto the mode dropdown introduced afterwards.
         if (data.newCardsMode === undefined && typeof data.newCardsPerDay === "number") {

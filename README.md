@@ -67,7 +67,7 @@ To pause automatic popups, click the **bell icon in the status bar** (bottom rig
 | Skip popups during fullscreen apps | on | Postpones popups while Windows reports a fullscreen app or presentation (games, slideshows, F11); the card appears within a minute after fullscreen ends. Windows only |
 | Deck filter | All decks | *All decks* or *Only listed decks* |
 | Deck list | — | Dual-list picker: move decks between *available* and *target* with the add/remove buttons (double-click works too); a target deck also covers its subdecks. Empty target list = all decks |
-| Show deck name | on | Shows the deck path and due count in the popup header |
+| Show deck name | on | Shows the deck path in the popup header |
 | Check shortly after startup | off | Runs one check ~15 s after Obsidian starts |
 
 The settings tab also shows whether the Spaced Repetition integration is working, and why not if it isn't.
@@ -90,8 +90,8 @@ The settings tab also shows whether the Spaced Repetition integration is working
 
 - **Global shortcut**: set a system-wide key combination in settings to show a popup even while Obsidian is in the background. Obsidian itself stays in the background, and the popup takes keyboard focus so you can answer right away (#7)
 - **New cards are mixed in with due cards** in proportion to how many of each are available (within the daily limit). Previously new cards appeared only once nothing was due, so a due backlog could stop them entirely
+- The popup header shows how many cards you reviewed today (including reviews in Spaced Repetition itself), alongside the remaining due and new cards
 - When Obsidian is not focused, the result of a manual request (e.g. "no cards to review right now") is also shown as an OS notification
-
 ### 1.4.0 — 2026-09-26
 
 - Status-bar button to show a review popup right away

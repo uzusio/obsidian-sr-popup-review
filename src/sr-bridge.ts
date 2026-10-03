@@ -1,4 +1,4 @@
-import { App, MarkdownView, TFile } from "obsidian";
+import { App, MarkdownView, TFile, moment } from "obsidian";
 
 const SR_PLUGIN_ID = "obsidian-spaced-repetition";
 
@@ -31,6 +31,8 @@ interface SRTopicPath {
 interface SRDeck {
     deckName?: unknown;
     subdecks?: unknown;
+    /** Every scheduled card of this deck (including ones not yet due). */
+    dueRepItems?: unknown;
     getTopicPath?: () => SRTopicPath | undefined;
     getDistinctRepItemCount?: (repItemType: number, includeSubdecks: boolean) => number;
 }
@@ -60,12 +62,16 @@ interface SRCard {
     back?: unknown;
     hasSchedule?: unknown;
     question?: SRQuestion;
+    scheduleInfo?: SRScheduleInfoLike | null;
 }
 
 /** SR's RepItemScheduleInfo (OSR or FSRS): interval in days; dueDateAsUnix is a getter. */
 interface SRScheduleInfoLike {
     interval?: unknown;
     dueDateAsUnix?: unknown;
+    algorithmType?: unknown;
+    /** FSRS only: moment or null. */
+    lastReview?: unknown;
 }
 
 interface SRSequencer {
@@ -99,6 +105,8 @@ interface SRUIManager {
 interface SROsrCore {
     remainingDeckTree?: SRDeck;
     reviewableDeckTree?: SRDeck;
+    /** Every card in the vault, rebuilt on each sync. */
+    fullDeckTree?: SRDeck | null;
 }
 
 interface SRDataManager {
@@ -216,6 +224,8 @@ export interface ReviewSession {
     eligibleDue: number;
     eligibleNew: number;
     isNewCard: boolean;
+    /** Cards reviewed today (popup and SR's own review view), from SR's schedules; null when unavailable. */
+    reviewedToday: number | null;
     /** Button labels as configured in the SR plugin's settings. */
     buttonLabels: { again: string; hard: string; good: string; easy: string };
     /**
@@ -404,6 +414,7 @@ export class SRBridge {
             Math.max(0, newCap),
         );
         if (eligibleDue + eligibleNew <= 0) return null;
+        const reviewedToday = this.countReviewedToday(sr, filter);
         const kind: CardKind = Math.random() * (eligibleDue + eligibleNew) < eligibleNew ? "new" : "due";
 
         // SR's own deck order is sequential: the first deck in the tree supplies
@@ -486,6 +497,7 @@ export class SRBridge {
             eligibleDue,
             eligibleNew,
             isNewCard,
+            reviewedToday,
             buttonLabels,
             intervals,
             rate: async (response: ReviewResponseValue) => {
@@ -583,6 +595,60 @@ export class SRBridge {
             });
         }
         return true;
+    }
+
+    /**
+     * Counts the cards reviewed today across the whole vault (popup and SR's own
+     * review view alike) from SR's schedule data, so no counter has to be stored.
+     * FSRS keeps lastReview; SM-2-OSR does not, so it is reconstructed the way SR
+     * itself does: dueDate - interval. Cards are de-duplicated by identity because
+     * one card can sit in several decks. Returns null when the tree is unavailable.
+     */
+    private countReviewedToday(sr: SRPluginLike, filter: DeckFilter): number | null {
+        const seen = new Set<unknown>();
+        const walk = (deck: SRDeck, path: string): void => {
+            if (deckAllowed(path, filter) && Array.isArray(deck.dueRepItems)) {
+                for (const card of deck.dueRepItems as unknown[]) seen.add(card);
+            }
+            if (!Array.isArray(deck.subdecks)) return;
+            for (const entry of deck.subdecks as unknown[]) {
+                const sub = entry as SRDeck;
+                if (typeof sub?.deckName !== "string") continue;
+                walk(sub, path.length > 0 ? `${path}/${sub.deckName}` : sub.deckName);
+            }
+        };
+        try {
+            const root = sr.dataManager?.osrCore?.fullDeckTree;
+            if (!root) return null;
+            walk(root, "");
+            let count = 0;
+            for (const card of seen) {
+                if (this.isReviewedToday((card as SRCard | null)?.scheduleInfo)) count++;
+            }
+            return count;
+        } catch {
+            return null;
+        }
+    }
+
+    private isReviewedToday(schedule: SRScheduleInfoLike | null | undefined): boolean {
+        if (!schedule) return false;
+        const last = schedule.lastReview as { valueOf?: () => unknown } | null | undefined;
+        if (last && typeof last.valueOf === "function") {
+            const ms = last.valueOf();
+            if (typeof ms === "number" && Number.isFinite(ms)) return moment(ms).isSame(moment(), "day");
+        }
+        const { interval, dueDateAsUnix } = schedule;
+        if (
+            schedule.algorithmType === "SM-2-OSR" &&
+            typeof interval === "number" &&
+            Number.isFinite(interval) &&
+            typeof dueDateAsUnix === "number" &&
+            Number.isFinite(dueDateAsUnix)
+        ) {
+            return moment(dueDateAsUnix).subtract(interval, "days").isSame(moment(), "day");
+        }
+        return false;
     }
 
     /**

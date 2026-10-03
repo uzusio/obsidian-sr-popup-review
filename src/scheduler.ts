@@ -178,7 +178,7 @@ export class Scheduler {
         );
         const introducesNewCard = session?.isNewCard === true;
         if (session) {
-            const eligible = `(eligible: due ${session.eligibleDue}, new ${session.eligibleNew})`;
+            const eligible = `(eligible: due ${session.eligibleDue}, new ${session.eligibleNew}, reviewed today ${session.reviewedToday ?? "?"})`;
             if (introducesNewCard) {
                 log(
                     `picked a new card ${eligible}` +

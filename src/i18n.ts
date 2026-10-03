@@ -4,7 +4,8 @@ type Strings = Record<string, string>;
 
 const en: Strings = {
     showAnswer: "Show answer",
-    due: "{n} due",
+    headerStats: "{today} today · {due} due · {new} new",
+    headerStatsNoToday: "{due} due · {new} new",
     newCard: "New card",
     saved: "Saved",
     saving: "Saving…",
@@ -113,7 +114,7 @@ const en: Strings = {
     settingsFullscreenDesc:
         "When Windows reports a fullscreen app or presentation in the foreground (games, slideshows, F11 fullscreen), the popup is postponed and appears within a minute after fullscreen ends. Windows only; the manual show-popup-now command is not affected.",
     settingsShowDeckName: "Show deck name",
-    settingsShowDeckNameDesc: "Show the deck name and due count in the popup header.",
+    settingsShowDeckNameDesc: "Show the deck name in the popup header.",
     settingsCheckOnStartup: "Check shortly after startup",
     settingsCheckOnStartupDesc:
         "Show one popup about 15 seconds after Obsidian starts if a matching card exists, regardless of the popup interval. Do-not-disturb still applies; while Spaced Repetition is still indexing, the check retries for a couple of minutes.",
@@ -121,7 +122,8 @@ const en: Strings = {
 
 const ja: Strings = {
     showAnswer: "答えを見る",
-    due: "期限 {n}枚",
+    headerStats: "今日 {today}枚 · 期限 {due}枚 · 新規 {new}枚",
+    headerStatsNoToday: "期限 {due}枚 · 新規 {new}枚",
     newCard: "新規カード",
     saved: "記録しました",
     saving: "保存中…",
@@ -227,7 +229,7 @@ const ja: Strings = {
     settingsFullscreenDesc:
         "ゲーム・スライドショー・F11全画面などのフルスクリーン状態をWindowsに問い合わせて検出し、その間はポップアップを見送ります（フルスクリーン終了後1分以内に出ます）。Windows専用。手動の「今すぐ表示」コマンドには影響しません。",
     settingsShowDeckName: "デッキ名を表示",
-    settingsShowDeckNameDesc: "ポップアップのヘッダにデッキ名と期限枚数を表示します。",
+    settingsShowDeckNameDesc: "ポップアップのヘッダにデッキ名を表示します。",
     settingsCheckOnStartup: "起動直後にチェック",
     settingsCheckOnStartupDesc:
         "Obsidian起動の約15秒後、条件を満たすカードがあれば間隔に関係なく1回表示します。停止時間帯は優先されます。Spaced Repetition の準備中は数分間リトライします。",
