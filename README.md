@@ -75,6 +75,8 @@ To pause automatic popups, click the **bell icon in the status bar** (bottom rig
 
 The settings tab also shows whether the Spaced Repetition integration is working, and why not if it isn't.
 
+"Today" (today's review count and the daily new-card limit) follows Spaced Repetition's **Start of day** setting. In SR 1.15.4 a bug makes that setting ignored unless hour, minute and second are all non-zero, so to switch days at 5 AM use something like `05:01:01`, then restart Obsidian.
+
 ## Data safety
 
 - Ratings go through `Spaced Repetition`'s own review sequencer — identical writes to pressing the buttons in its modal (scheduling comment, sibling burying, load balancing, FSRS/SM-2, all of it).
@@ -89,6 +91,10 @@ The settings tab also shows whether the Spaced Repetition integration is working
 - Position is fixed to the bottom-right of the primary display for now.
 
 ## Changelog
+
+### Unreleased
+
+- "Today" (today's review count and the daily new-card limit) now follows Spaced Repetition's "Start of day" setting
 
 ### 1.5.0 — 2026-10-04
 

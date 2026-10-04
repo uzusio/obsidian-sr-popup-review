@@ -23,6 +23,8 @@ interface SRSettingsLike {
     flashcardGoodText?: unknown;
     flashcardEasyText?: unknown;
     showIntervalInReviewButtons?: unknown;
+    /** "Start of day" ("HH:mm:ss", default "00:00:00"). */
+    startOfDay?: unknown;
 }
 
 interface SRTopicPath {
@@ -940,12 +942,49 @@ export class SRBridge {
         }
     }
 
+    /**
+     * SR's "today" (start of the current SR day) as a moment. SR 1.15.4 behaviour is
+     * copied as-is, including its bug: the custom "Start of day" boundary only takes
+     * effect when hour, minute AND second are all non-zero (upstream issue #1423).
+     * It mirrors what SR actually records as the review date. If SR fixes this, fix
+     * it here too. Falls back to the calendar day when the setting is unreadable.
+     */
+    srToday(): moment.Moment {
+        return this.srDayOf(moment());
+    }
+
+    /** Start of the SR day that contains `at` (see srToday). */
+    private srDayOf(at: moment.Moment): moment.Moment {
+        const calendarDay = at.clone().startOf("day");
+        let raw: unknown;
+        try {
+            raw = this.getSRPlugin()?.dataManager?.data?.settings?.startOfDay;
+        } catch {
+            return calendarDay;
+        }
+        if (typeof raw !== "string") return calendarDay;
+        const m = /^(\d{1,2}):(\d{1,2}):(\d{1,2})$/.exec(raw.trim());
+        if (!m) return calendarDay;
+        const [h, min, s] = [Number(m[1]), Number(m[2]), Number(m[3])];
+        if (h > 23 || min > 59 || s > 59) return calendarDay;
+        // SR's own condition (&&, not ||): any zero component disables the boundary.
+        if (h === 0 || min === 0 || s === 0) return calendarDay;
+        const boundary = at.clone().hour(h).minute(min).second(s).millisecond(0);
+        return at.isBefore(boundary) ? calendarDay.subtract(1, "day") : calendarDay;
+    }
+
+    /** True when `at` falls on the same SR day as now (SR days, not calendar days). */
+    private isInSRToday(at: moment.Moment): boolean {
+        return this.srDayOf(at).isSame(this.srToday(), "day");
+    }
+
     private isReviewedToday(schedule: SRScheduleInfoLike | null | undefined): boolean {
         if (!schedule) return false;
         const last = schedule.lastReview as { valueOf?: () => unknown } | null | undefined;
         if (last && typeof last.valueOf === "function") {
             const ms = last.valueOf();
-            if (typeof ms === "number" && Number.isFinite(ms)) return moment(ms).isSame(moment(), "day");
+            // lastReview carries a time of day, so map it to its SR day first.
+            if (typeof ms === "number" && Number.isFinite(ms)) return this.isInSRToday(moment(ms));
         }
         const { interval, dueDateAsUnix } = schedule;
         if (
@@ -955,7 +994,8 @@ export class SRBridge {
             typeof dueDateAsUnix === "number" &&
             Number.isFinite(dueDateAsUnix)
         ) {
-            return moment(dueDateAsUnix).subtract(interval, "days").isSame(moment(), "day");
+            // dueDate = SR's "today" + interval, i.e. a day start already: compare days directly.
+            return moment(dueDateAsUnix).subtract(interval, "days").isSame(this.srToday(), "day");
         }
         return false;
     }

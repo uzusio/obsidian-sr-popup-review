@@ -47,7 +47,12 @@ export class Scheduler {
 
     private newCardsShownToday(): number {
         const s = this.plugin.settings;
-        return s.newCardsShownDate === moment().format("YYYY-MM-DD") ? s.newCardsShownCount : 0;
+        return s.newCardsShownDate === this.todayKey() ? s.newCardsShownCount : 0;
+    }
+
+    /** "Today" as SR sees it (honours SR's Start of day); calendar day if SR is unavailable. */
+    private todayKey(): string {
+        return this.plugin.bridge.srToday().format("YYYY-MM-DD");
     }
 
     /** How many new cards may still be introduced today (Infinity = unlimited). */
@@ -198,7 +203,7 @@ export class Scheduler {
         }
         this.nothingDueUntil = 0;
         if (introducesNewCard) {
-            const today = moment().format("YYYY-MM-DD");
+            const today = this.todayKey();
             if (s.newCardsShownDate !== today) {
                 s.newCardsShownDate = today;
                 s.newCardsShownCount = 0;
