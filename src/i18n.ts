@@ -123,6 +123,12 @@ const en: Strings = {
     newModeUnlimited: "Unlimited",
     settingsNewPerDay: "New cards per day",
     settingsNewPerDayDesc: "At most this many never-reviewed cards are introduced per day.",
+    settingsNewRatioEnabled: "Fixed share of new cards",
+    settingsNewRatioEnabledDesc:
+        "When on, a new card is picked with the share below whenever both new and due cards are left. When off, the share follows how many of each are left.",
+    settingsNewRatio: "Share of new cards",
+    settingsNewRatioDesc:
+        "Percentage of popups that show a new card. 67% ≈ 2 out of 3. Once the daily new-card limit is reached, only due cards are shown.",
     settingsRandomDeck: "Randomize deck order",
     settingsRandomDeckDesc:
         "Pick each popup card from a random deck (weighted by its card count), so every card has a roughly equal chance. Turn off to follow Spaced Repetition's deck order, which drains the first deck in the tree before later ones.",
@@ -254,6 +260,12 @@ const ja: Strings = {
     newModeUnlimited: "無制限",
     settingsNewPerDay: "1日の新規カード導入枚数",
     settingsNewPerDayDesc: "1日にこの枚数まで導入します。",
+    settingsNewRatioEnabled: "新規カードの割合を固定する",
+    settingsNewRatioEnabledDesc:
+        "オンにすると、新規と復習の両方が残っているとき、下の割合で新規カードを選びます。オフのときは残りの枚数に比例します。",
+    settingsNewRatio: "新規カードの割合",
+    settingsNewRatioDesc:
+        "ポップアップのうち新規カードを出す割合（%）。67% なら 3 枚中およそ 2 枚。1 日の上限に達したあとは復習だけになります。",
     settingsRandomDeck: "デッキ順を無視してランダムに出題",
     settingsRandomDeckDesc:
         "毎回のポップアップを、カード枚数で重み付けしたランダムなデッキから選びます（全カードがほぼ等確率になります）。オフにすると Spaced Repetition 本来のデッキ順（ツリーの前のデッキから消化）に従います。",

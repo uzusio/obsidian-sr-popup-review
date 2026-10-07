@@ -33,6 +33,10 @@ export interface SRPopupSettings {
     newCardsMode: "none" | "limited" | "unlimited";
     /** Daily cap used when newCardsMode is "limited". */
     newCardsPerDay: number;
+    /** Fix the share of new cards (instead of following the remaining counts). */
+    newCardRatioEnabled: boolean;
+    /** Share of new cards in percent (0-100), used when newCardRatioEnabled. */
+    newCardRatio: number;
     /** Persisted state: date ("YYYY-MM-DD") and count of new cards shown that day. */
     newCardsShownDate: string;
     newCardsShownCount: number;
@@ -53,6 +57,8 @@ export interface SRPopupSettings {
     popupHeightRevealed: number | null;
 }
 
+export const DEFAULT_NEW_CARD_RATIO = 67;
+
 export const DEFAULT_SETTINGS: SRPopupSettings = {
     language: "-",
     paused: false,
@@ -66,6 +72,8 @@ export const DEFAULT_SETTINGS: SRPopupSettings = {
     autoCloseSeconds: 90,
     newCardsMode: "limited",
     newCardsPerDay: 10,
+    newCardRatioEnabled: false,
+    newCardRatio: DEFAULT_NEW_CARD_RATIO,
     newCardsShownDate: "",
     newCardsShownCount: 0,
     randomizeDeckOrder: true,
@@ -335,6 +343,26 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 },
             },
             {
+                name: t("settingsNewRatioEnabled"),
+                desc: t("settingsNewRatioEnabledDesc"),
+                visible: () => this.plugin.settings.newCardsMode !== "none",
+                control: { type: "toggle", key: "newCardRatioEnabled" },
+            },
+            {
+                name: t("settingsNewRatio"),
+                desc: t("settingsNewRatioDesc"),
+                visible: () =>
+                    this.plugin.settings.newCardsMode !== "none" && this.plugin.settings.newCardRatioEnabled,
+                control: {
+                    type: "slider",
+                    key: "newCardRatio",
+                    min: 5,
+                    max: 95,
+                    step: 1,
+                    displayFormat: (v) => `${v}%`,
+                },
+            },
+            {
                 name: t("settingsRandomDeck"),
                 desc: t("settingsRandomDeckDesc"),
                 control: { type: "toggle", key: "randomizeDeckOrder" },
@@ -393,7 +421,21 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 if (value !== "none" && value !== "limited" && value !== "unlimited") return;
                 this.plugin.settings.newCardsMode = value;
                 await this.plugin.saveSettings();
-                this.update(); // show/hide the per-day cap
+                this.update(); // show/hide the per-day cap and the new-card share rows
+                return;
+            }
+            case "newCardRatioEnabled": {
+                if (typeof value !== "boolean") return;
+                this.plugin.settings.newCardRatioEnabled = value;
+                await this.plugin.saveSettings();
+                this.update(); // show/hide the share slider
+                return;
+            }
+            case "newCardRatio": {
+                // No update(): rebuilding the tab would interrupt the drag.
+                if (typeof value !== "number" || !Number.isFinite(value)) return;
+                this.plugin.settings.newCardRatio = Math.min(100, Math.max(0, Math.round(value)));
+                await this.plugin.saveSettings();
                 return;
             }
             case "mirrorEnabled": {

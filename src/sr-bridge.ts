@@ -1,5 +1,6 @@
 import { diffArrays } from "diff";
 import { App, MarkdownView, TFile, moment } from "obsidian";
+import type { ActiveQuestion } from "./review-state";
 
 const SR_PLUGIN_ID = "obsidian-spaced-repetition";
 
@@ -299,6 +300,23 @@ interface NoteSource {
 
 type CardKind = "due" | "new";
 
+/**
+ * Decides whether the next popup shows a new or a due card. With a fixed
+ * `newRatio` (0..1) it applies only when both kinds are available; otherwise
+ * (and when newRatio is null) the choice is proportional to the eligible counts.
+ */
+export function chooseCardKind(
+    eligibleDue: number,
+    eligibleNew: number,
+    newRatio: number | null,
+    random: () => number = Math.random,
+): CardKind {
+    if (newRatio !== null && eligibleDue > 0 && eligibleNew > 0) {
+        return random() < newRatio ? "new" : "due";
+    }
+    return random() * (eligibleDue + eligibleNew) < eligibleNew ? "new" : "due";
+}
+
 /** Cards one deck itself holds (excluding subdecks), as counted by SR. */
 interface DeckCounts {
     deck: SRDeck;
@@ -370,6 +388,13 @@ export interface ReviewSession {
      * "open note" action). null when the note could not be identified from SR's internals,
      * in which case the popup hides the menu item. Resolves false if the file no longer exists. */
     openNote: (() => Promise<boolean>) | null;
+    /**
+     * The card's question block as it read when the popup opened (SR's
+     * questionText.original — SR swaps that string after a write, so this is a
+     * copy) and its note's path. Used to tell external tools whether an edit
+     * would touch the open card; null when either is unknown.
+     */
+    question: ActiveQuestion | null;
 }
 
 export type ProbeStatus = "ok" | "missing" | "notReady" | "incompatible";
@@ -515,11 +540,15 @@ export class SRBridge {
      * and N' = min(N, newCap) new cards (all passing the deck filter), a new card is
      * chosen with probability N' / (D + N'), otherwise a due card. `newCap` is the
      * remaining new-card allowance (0 = none, Infinity = unlimited).
+     *
+     * `newRatio` (0..1) fixes the new-card share instead whenever both kinds are
+     * available; null keeps the proportional behavior above.
      */
     async openSession(
         newCap: number,
         filter: DeckFilter,
         randomizeDeckOrder: boolean,
+        newRatio: number | null,
     ): Promise<ReviewSession | null> {
         const sr = this.getSRPlugin();
         if (!sr) return null;
@@ -545,7 +574,7 @@ export class SRBridge {
         );
         if (eligibleDue + eligibleNew <= 0) return null;
         const reviewedToday = this.countReviewedToday(sr, filter);
-        const kind: CardKind = Math.random() * (eligibleDue + eligibleNew) < eligibleNew ? "new" : "due";
+        const kind: CardKind = chooseCardKind(eligibleDue, eligibleNew, newRatio);
 
         // SR's own deck order is sequential: the first deck in the tree supplies
         // every card until its due pile is empty, which starves later decks when
@@ -622,6 +651,7 @@ export class SRBridge {
 
         const boundSequencer = sequencer;
         const location = noteSource ? `${noteSource.path}:${noteSource.line + 1}` : null;
+        const question = this.activeQuestion(card, noteSource);
         return {
             front: card.front.trimStart(),
             back: card.back,
@@ -652,7 +682,21 @@ export class SRBridge {
             },
             location,
             openNote: noteSource ? () => this.openNoteAt(noteSource) : null,
+            question,
         };
+    }
+
+    /** The question block's text right now plus its note; null when either is unavailable. */
+    private activeQuestion(card: SRCard, noteSource: NoteSource | null): ActiveQuestion | null {
+        try {
+            const path = noteSource?.path;
+            const text = card.question?.questionText?.original;
+            if (typeof path !== "string" || path === "") return null;
+            if (typeof text !== "string" || text === "") return null;
+            return { path, text };
+        } catch {
+            return null; // SR's getters may throw
+        }
     }
 
     /**

@@ -173,17 +173,39 @@ export class Scheduler {
             return;
         }
 
+        // Until the popup is up (or known not to come up), no card is fixed yet:
+        // external tools asking whether an edit is safe are told to wait.
+        const endPreparing = this.plugin.reviewState.beginPreparing();
+        try {
+            await this.openAndShow(mode, focusPopup, log);
+        } finally {
+            endPreparing();
+        }
+    }
+
+    private async openAndShow(
+        mode: TickMode,
+        focusPopup: boolean,
+        log: (message: string) => void,
+    ): Promise<void> {
+        const s = this.plugin.settings;
         const filter: DeckFilter = { mode: s.deckFilterMode, paths: s.deckFilterList };
-        // Due and new cards are mixed by the ratio of their counts; new cards are
-        // capped by what is left of today's allowance.
+        // Due and new cards are mixed by the ratio of their counts, or by the fixed
+        // new-card share when that setting is on; new cards are capped by what is
+        // left of today's allowance.
+        const newShare =
+            s.newCardRatioEnabled && s.newCardsMode !== "none" ? s.newCardRatio / 100 : null;
         const session = await this.plugin.bridge.openSession(
             this.newCardCap(),
             filter,
             s.randomizeDeckOrder,
+            newShare,
         );
         const introducesNewCard = session?.isNewCard === true;
         if (session) {
-            const eligible = `(eligible: due ${session.eligibleDue}, new ${session.eligibleNew}, reviewed today ${session.reviewedToday ?? "?"})`;
+            const eligible =
+                `(eligible: due ${session.eligibleDue}, new ${session.eligibleNew}, reviewed today ${session.reviewedToday ?? "?"}` +
+                (newShare !== null ? `) (new share ${s.newCardRatio}%)` : ")");
             if (introducesNewCard) {
                 log(
                     `picked a new card ${eligible}` +

@@ -66,6 +66,8 @@ To pause automatic popups, click the **bell icon in the status bar** (bottom rig
 | Do not disturb | on, 01:00–09:00 | Toggle plus a time range with no popups; supports ranges across midnight |
 | Auto-close (seconds) | 90 | Closes an untouched popup (nothing is written); 0 disables |
 | New cards | Up to a daily limit (10/day) | Never-reviewed cards are mixed in with due cards in proportion to how many of each are available (with a daily limit, only today's remaining allowance counts): *don't introduce* / *up to a daily limit* / *unlimited* |
+| Fixed share of new cards | off | When on, a new card is picked with the share set below whenever both new and due cards are left (instead of in proportion to how many of each are left). Shown unless new cards are off |
+| Share of new cards | 67% | Slider (5–95%) shown when the fixed share is on: 67% ≈ 2 out of 3 popups. Once the daily limit is reached, only due cards are shown |
 | Randomize deck order | on | Pick each popup card from a random deck (weighted by card count) so every card has a roughly equal chance; off follows Spaced Repetition's sequential deck order |
 | Skip popups during fullscreen apps | on | Postpones popups while Windows reports a fullscreen app or presentation (games, slideshows, F11); the card appears within a minute after fullscreen ends. Windows only |
 | Deck filter | All decks | *All decks* or *Only listed decks* |
@@ -76,6 +78,30 @@ To pause automatic popups, click the **bell icon in the status bar** (bottom rig
 The settings tab also shows whether the Spaced Repetition integration is working, and why not if it isn't.
 
 "Today" (today's review count and the daily new-card limit) follows Spaced Repetition's **Start of day** setting. In SR 1.15.4 a bug makes that setting ignored unless hour, minute and second are all non-zero, so to switch days at 5 AM use something like `05:01:01`, then restart Obsidian.
+
+## Working with external tools (Obsidian CLI)
+
+If a script or AI tool edits your flashcard notes while a popup is open, Spaced Repetition may fail to find the card when you rate it. Two commands for Obsidian's command line interface (CLI) let such tools ask first. Enable the command line interface in Obsidian's settings to use them; Obsidian must be running.
+
+`obsidian sr-popup-review:state` — what the popup is doing right now:
+
+```json
+{"state":"showing","path":"Cards/Spanish.md","original":"hola::hello\n<!--SR:!2026-10-08,3,250-->"}
+```
+
+`state` is `idle`, `preparing` (picking a card), `showing` (a card is open) or `writing` (a rating is being saved). `path` / `original` (the open card's whole question block) are set only while `showing` or `writing`.
+
+`obsidian sr-popup-review:check path=<path> old=<text> new=<text>` — would replacing `old` with `new` (once) in that note disturb the open card?
+
+```json
+{"result":"safe","reason":"the open card's text stays intact"}
+```
+
+- Edits to other notes, or while no popup is open, are `safe`.
+- In the open card's note, an edit is `safe` only when `old` appears exactly once and the card's question block is still there, unchanged and exactly once, after the edit.
+- Whenever it cannot tell (a card is being picked or a rating is being saved, the note or text is not found, …) the answer is `unsafe`. Treat a failed command the same way.
+- Pass `path` relative to the vault (an absolute path is `unsafe`).
+- In `old` / `new`, write a newline as `\n`, a tab as `\t` and a backslash as `\\`. Omit `new` to check a deletion.
 
 ## Data safety
 
@@ -95,6 +121,8 @@ The settings tab also shows whether the Spaced Repetition integration is working
 ### Unreleased
 
 - "Today" (today's review count and the daily new-card limit) now follows Spaced Repetition's "Start of day" setting
+- New setting "Fixed share of new cards" with a "Share of new cards" slider, to introduce new cards at a set rate even while many due cards remain
+- **Obsidian CLI commands** `sr-popup-review:state` and `sr-popup-review:check`, so external tools that edit your notes can check whether an edit would disturb the card open in the popup (#9)
 
 ### 1.5.0 — 2026-10-04
 
