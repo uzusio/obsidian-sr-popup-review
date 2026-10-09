@@ -2,11 +2,16 @@
  * The popup itself is a separate BrowserWindow with inline styles;
  * these rules only style the settings tab (deck picker, shortcut recorder). */
 
+.sr-popup-duallist-row {
+    flex-wrap: wrap;
+}
+
 .sr-popup-duallist {
+    flex-basis: 100%;
     display: flex;
     gap: 8px;
     align-items: stretch;
-    margin-bottom: 1em;
+    margin-top: 8px;
 }
 
 .sr-popup-duallist-col {

@@ -1,5 +1,5 @@
 import { App, Platform, PluginSettingTab, moment } from "obsidian";
-import type { ButtonComponent, ExtraButtonComponent, Setting, SettingDefinitionItem, SettingGroup } from "obsidian";
+import type { ButtonComponent, ExtraButtonComponent, Setting, SettingDefinitionItem } from "obsidian";
 import type SRPopupPlugin from "./main";
 import { normalizeDeckPaths } from "./sr-bridge";
 import { isInQuietHours, quietHoursEndDate } from "./scheduler";
@@ -313,7 +313,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
                 name: t("settingsDeckFilterList"),
                 desc: t("settingsDeckFilterListDesc"),
                 visible: () => this.plugin.settings.deckFilterMode !== "all",
-                render: (setting, group) => this.renderDeckPicker(setting, group),
+                render: (setting) => this.renderDeckPicker(setting),
             },
             {
                 name: t("settingsNewMode"),
@@ -856,7 +856,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
      * Falls back to a plain textarea when the deck tree is unavailable
      * (SR still initializing).
      */
-    private renderDeckPicker(setting: Setting, group: SettingGroup): (() => void) | void {
+    private renderDeckPicker(setting: Setting): (() => void) | void {
         const known = this.plugin.bridge.listDeckPaths();
         const listed = this.plugin.settings.deckFilterList;
 
@@ -874,9 +874,12 @@ export class SRPopupSettingTab extends PluginSettingTab {
 
         setting.setDesc(t("deckPickerIncludeDesc")).setHeading();
 
-        // The dual list is far wider than a row's control area, so it lives
-        // after the row and is removed again when that row is torn down.
-        const wrap = group.listEl.createDiv({ cls: "sr-popup-duallist" });
+        // The dual list is far wider than a row's control area, so it wraps onto
+        // its own line inside the row. It cannot sit beside the row in
+        // group.listEl: Obsidian re-syncs that element to the setting rows only
+        // and drops anything else. Removed again when the row is torn down.
+        setting.settingEl.addClass("sr-popup-duallist-row");
+        const wrap = setting.settingEl.createDiv({ cls: "sr-popup-duallist" });
         const makeColumn = (labelKey: string): HTMLSelectElement => {
             const column = wrap.createDiv({ cls: "sr-popup-duallist-col" });
             column.createDiv({ cls: "sr-popup-duallist-label", text: t(labelKey) });
@@ -928,6 +931,7 @@ export class SRPopupSettingTab extends PluginSettingTab {
 
         return () => {
             wrap.remove();
+            setting.settingEl.removeClass("sr-popup-duallist-row");
         };
     }
 }
