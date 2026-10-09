@@ -94,10 +94,11 @@ The settings tab also shows whether the Spaced Repetition integration is working
 
 ## Changelog
 
-### Unreleased
+### 1.6.0 — 2026-10-10
 
 - "Today" (today's review count and the daily new-card limit) now follows Spaced Repetition's "Start of day" setting
 - New setting "Fixed share of new cards" with a "Share of new cards" slider, to introduce new cards at a set rate even while many due cards remain
+- Fixed: the deck picker (the two lists of available and target decks) did not appear in the settings when "Only listed decks" was selected
 
 ### 1.5.0 — 2026-10-04
 
